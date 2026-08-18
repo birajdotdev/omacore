@@ -22,6 +22,10 @@ Item {
   property int caseLevel: Model.LEVEL_UNKNOWN
   property bool leftCharging: false
   property bool rightCharging: false
+  // False on models/firmware where openscq30 doesn't report this setting at all;
+  // the panel hides the row rather than showing a toggle that will always fail.
+  property bool windNoiseSuppressionSupported: false
+  property bool windNoiseSuppression: false
   property string lastError: ""
   property string actionStatus: ""
 
@@ -32,9 +36,24 @@ Item {
   readonly property bool busy: statusProcess.running || actionProcess.running
   readonly property bool hasEarbuds: connected
 
+  readonly property int lowBatteryPercent: 20
+  readonly property bool notifyEnabled: setting("notifyEnabled", true) === true
+
+  // Latched so a bud sitting at e.g. 15% only notifies once, not every poll.
+  // Cleared on disconnect so a fresh drop after reconnecting notifies again.
+  property bool leftLowNotified: false
+  property bool rightLowNotified: false
+  property bool caseLowNotified: false
+  property var _notifyQueue: []
+
   // Held over an incoming poll until the CLI agrees, so a write already in
   // flight when the click landed cannot snap the control back.
   property string _pendingMode: ""
+  // Same optimistic-update pattern as _pendingMode, for the wind noise toggle.
+  // A plain bool can't double as "no pending change" the way "" does for mode,
+  // hence the separate has-pending flag.
+  property bool _windNoisePending: false
+  property bool _pendingWindNoiseValue: false
   readonly property int settleHoldMs: 4000
   readonly property int actionStatusMs: 2200
 
@@ -84,8 +103,7 @@ Item {
   function applyStatus(raw) {
     var parsed = Model.parseSettingsJson(raw)
     if (!parsed.ok) {
-      connected = false
-      lastError = "Could not read the earbuds' status."
+      _noteDisconnected("Could not read the earbuds' status.")
       return
     }
     connected = true
@@ -97,6 +115,48 @@ Item {
     leftCharging = status.leftCharging
     rightCharging = status.rightCharging
     ancMode = _settle(status.ancMode)
+    windNoiseSuppressionSupported = status.windNoiseSuppressionSupported
+    windNoiseSuppression = status.windNoiseSuppressionSupported
+      ? _settleWindNoise(status.windNoiseSuppression)
+      : false
+    _checkLowBattery("leftLowNotified", "Left earbud", leftLevel, leftCharging)
+    _checkLowBattery("rightLowNotified", "Right earbud", rightLevel, rightCharging)
+    _checkLowBattery("caseLowNotified", "Case", caseLevel, false)
+  }
+
+  // Fires once on the connected -> disconnected edge, not on every failed poll
+  // while it stays down, and not on the very first probe before we ever connected.
+  function _noteDisconnected(message) {
+    if (connected) _notify("Soundcore earbuds disconnected", message, "normal")
+    connected = false
+    lastError = message
+    leftLowNotified = false
+    rightLowNotified = false
+    caseLowNotified = false
+  }
+
+  function _checkLowBattery(flagName, label, level, charging) {
+    var low = level !== Model.LEVEL_UNKNOWN && level <= lowBatteryPercent && !charging
+    if (!low) {
+      root[flagName] = false
+      return
+    }
+    if (root[flagName]) return
+    root[flagName] = true
+    _notify(label + " battery low", level + "% remaining", "normal")
+  }
+
+  function _notify(headline, description, urgency) {
+    if (!notifyEnabled) return
+    _notifyQueue.push({ headline: headline, description: description, urgency: urgency })
+    _pumpNotifyQueue()
+  }
+
+  function _pumpNotifyQueue() {
+    if (notifyProcess.running || _notifyQueue.length === 0) return
+    var next = _notifyQueue.shift()
+    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Soundcore", "-u", next.urgency, next.headline, next.description]
+    notifyProcess.running = true
   }
 
   function _settle(reported) {
@@ -115,6 +175,29 @@ Item {
     ancMode = mode
     settleTimer.restart()
     actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_AMBIENT_SOUND_MODE + "=" + mode]
+    actionProcess.running = true
+  }
+
+  function _settleWindNoise(reported) {
+    if (!_windNoisePending) return reported
+    if (reported === _pendingWindNoiseValue) {
+      _windNoisePending = false
+      windNoiseSettleTimer.stop()
+      return reported
+    }
+    return _pendingWindNoiseValue
+  }
+
+  // Toggling this while in Normal ambient sound mode requires briefly switching to
+  // Noise Canceling and back; openscq30 handles that multi-step packet exchange
+  // itself, so this is a plain setting write same as setAncMode.
+  function setWindNoiseSuppression(enabled) {
+    if (!connected || !windNoiseSuppressionSupported || actionProcess.running) return
+    _windNoisePending = true
+    _pendingWindNoiseValue = enabled
+    windNoiseSuppression = enabled
+    windNoiseSettleTimer.restart()
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_WIND_NOISE_SUPPRESSION + "=" + (enabled ? "true" : "false")]
     actionProcess.running = true
   }
 
@@ -145,6 +228,13 @@ Item {
   }
 
   Timer {
+    id: windNoiseSettleTimer
+    interval: root.settleHoldMs
+    repeat: false
+    onTriggered: { root._windNoisePending = false; root.refresh() }
+  }
+
+  Timer {
     id: actionStatusTimer
     interval: root.actionStatusMs
     repeat: false
@@ -170,11 +260,15 @@ Item {
     stderr: StdioCollector { id: statusErr; waitForEnd: true }
     onExited: function (exitCode) {
       if (exitCode === 0) root.applyStatus(statusOut.text)
-      else {
-        root.connected = false
-        root.lastError = Model.elideError(statusErr.text) || "Could not reach the earbuds."
-      }
+      else root._noteDisconnected(Model.elideError(statusErr.text) || "Could not reach the earbuds.")
     }
+  }
+
+  Process {
+    id: notifyProcess
+    running: false
+    command: []
+    onExited: root._pumpNotifyQueue()
   }
 
   Process {
@@ -186,6 +280,8 @@ Item {
       if (exitCode !== 0) {
         root._pendingMode = ""
         settleTimer.stop()
+        root._windNoisePending = false
+        windNoiseSettleTimer.stop()
         root.actionStatus = Model.elideError(actionErr.text) || "openscq30 rejected the command"
         actionStatusTimer.restart()
       }

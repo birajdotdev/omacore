@@ -23,8 +23,11 @@ Then follow **Setup** below to point it at your earbuds.
   percent rather than a raw sensor value.
 - **Sound mode** — Noise Cancellation, Transparency or Normal — with the
   active mode checked, and one click or `n`/`t`/`o` to switch it.
+- **Wind noise suppression** — a toggle below the sound modes, one click or
+  `w` to flip it. Only shown when openscq30 reports the setting at all (model
+  and firmware dependent — the R60i NC / P31i support it).
 
-This is an MVP scaffold: only battery and the three sound modes are wired up.
+This is an MVP scaffold: only battery, sound mode and wind noise suppression are wired up.
 OpenSCQ30 exposes far more per-device settings (multi-scene ANC transport
 profiles, wind noise suppression, button remapping, EQ, …) — run
 `openscq30 device -a <mac> list-settings --json` to see everything your
@@ -141,6 +144,7 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 | `n` | Noise Cancellation |
 | `t` | Transparency |
 | `o` | Normal |
+| `w` | toggle wind noise suppression (if supported) |
 | `r` | refresh |
 | `tab` | move to the next panel |
 | `esc` | close |
@@ -156,6 +160,7 @@ Left click opens the panel.
 | Poll interval (seconds) | 30 | How often the widget re-runs `openscq30 device ... setting -g ...`. |
 | Path to the openscq30 CLI | empty | Leave empty to find `openscq30` on `PATH`. |
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. |
+| Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 
 ## Credits
 

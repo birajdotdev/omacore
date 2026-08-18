@@ -24,12 +24,11 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== ""
 
-  readonly property int lowBatteryPercent: 20
-
   readonly property var cursorRows: {
     var rows = []
     if (!pods.hasEarbuds) return rows
     for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
+    if (pods.windNoiseSuppressionSupported) rows.push("windnoise")
     return rows
   }
 
@@ -50,6 +49,7 @@ Panel {
   function activateCursor() {
     var name = cursorRow
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
+    else if (name === "windnoise") pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
   }
 
   function focusRow(name) {
@@ -130,6 +130,7 @@ Panel {
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
         else if (key === "o") pods.setAncMode(Model.MODE_NORMAL)
+        else if (key === "w" && pods.windNoiseSuppressionSupported) pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
       }
 
       Flickable {
@@ -228,6 +229,27 @@ Panel {
             }
           }
 
+          PanelSeparator {
+            visible: pods.hasEarbuds && pods.windNoiseSuppressionSupported
+            foreground: root.foreground
+          }
+
+          Column {
+            visible: pods.hasEarbuds && pods.windNoiseSuppressionSupported
+            width: parent.width
+            spacing: Style.space(10)
+
+            PanelSectionHeader {
+              text: "WIND NOISE"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            WindNoiseRow {
+              width: parent.width
+            }
+          }
+
           Text {
             visible: root.guidanceVisible
             width: parent.width
@@ -249,7 +271,7 @@ Panel {
     property int level: Model.LEVEL_UNKNOWN
     property bool charging: false
 
-    readonly property bool low: level !== Model.LEVEL_UNKNOWN && level <= root.lowBatteryPercent && !charging
+    readonly property bool low: level !== Model.LEVEL_UNKNOWN && level <= pods.lowBatteryPercent && !charging
 
     implicitHeight: levelLayout.implicitHeight
 
@@ -349,6 +371,55 @@ Panel {
         font.family: root.fontFamily
         font.pixelSize: Style.font.icon
         opacity: modeRow.selected ? 1.0 : 0.0
+      }
+    }
+  }
+
+  component WindNoiseRow: CursorSurface {
+    id: windNoiseRow
+
+    readonly property string rowName: "windnoise"
+    readonly property bool on: pods.windNoiseSuppression
+
+    hasCursor: root.rowHasCursor(rowName)
+    foreground: root.foreground
+    implicitHeight: windNoiseLabel.implicitHeight + Style.spacing.rowPaddingX
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.focusRow(windNoiseRow.rowName)
+      onClicked: pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
+    }
+
+    RowLayout {
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(8)
+
+      Text {
+        id: windNoiseLabel
+        Layout.fillWidth: true
+        text: "Wind Noise Suppression"
+        color: root.foreground
+        opacity: windNoiseRow.on ? 1.0 : 0.75
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      // Presentation only, same as omapods' toggles: the row above already owns
+      // the click, hover and keyboard cursor, so the switch just mirrors state.
+      ToggleSwitch {
+        Layout.alignment: Qt.AlignVCenter
+        trackHeight: Math.round(windNoiseLabel.font.pixelSize * 1.2)
+        checked: windNoiseRow.on
+        interactive: false
+        foreground: root.foreground
       }
     }
   }

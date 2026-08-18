@@ -7,6 +7,9 @@ var SETTING_BATTERY_RIGHT = "batteryLevelRight"
 var SETTING_BATTERY_CASE = "caseBatteryLevel"
 var SETTING_CHARGING_LEFT = "isChargingLeft"
 var SETTING_CHARGING_RIGHT = "isChargingRight"
+// Toggle setting, present only on models/firmware that support it (D1202/D1202C do).
+// Absent from -g's reply rather than erroring, so it's polled speculatively like the rest.
+var SETTING_WIND_NOISE_SUPPRESSION = "windNoiseSuppression"
 
 // The settings this widget polls on every refresh.
 var POLL_SETTING_IDS = [
@@ -15,7 +18,8 @@ var POLL_SETTING_IDS = [
   SETTING_BATTERY_RIGHT,
   SETTING_BATTERY_CASE,
   SETTING_CHARGING_LEFT,
-  SETTING_CHARGING_RIGHT
+  SETTING_CHARGING_RIGHT,
+  SETTING_WIND_NOISE_SUPPRESSION
 ]
 
 // AmbientSoundMode's three raw values on the D1202/D1202C (R60i NC / P31i),
@@ -67,6 +71,13 @@ function boolFromString(text) {
   return String(text || "").toLowerCase() === "yes"
 }
 
+// windNoiseSuppression is a Toggle setting, so unlike isChargingLeft/Right (Information
+// settings, which come through as the literal string "Yes"/"No"), its value.value in the
+// CLI's JSON is a real JSON boolean already. See Value's serde tagging in openscq30-lib.
+function boolFromToggle(value) {
+  return value === true
+}
+
 // `openscq30 device -a <mac> setting -g <id> [-g <id> ...] --json` prints:
 // [{"settingId":"ambientSoundMode","value":{"type":"string","value":"NoiseCanceling"}}, ...]
 // Every setting used here (Select and Information) converts to Value::String
@@ -104,7 +115,9 @@ function defaultStatus() {
     rightLevel: LEVEL_UNKNOWN,
     caseLevel: LEVEL_UNKNOWN,
     leftCharging: false,
-    rightCharging: false
+    rightCharging: false,
+    windNoiseSuppressionSupported: false,
+    windNoiseSuppression: false
   }
 }
 
@@ -117,6 +130,8 @@ function statusFromMap(map) {
   status.caseLevel = levelFromFraction(map[SETTING_BATTERY_CASE])
   status.leftCharging = boolFromString(map[SETTING_CHARGING_LEFT])
   status.rightCharging = boolFromString(map[SETTING_CHARGING_RIGHT])
+  status.windNoiseSuppressionSupported = Object.prototype.hasOwnProperty.call(map, SETTING_WIND_NOISE_SUPPRESSION)
+  status.windNoiseSuppression = boolFromToggle(map[SETTING_WIND_NOISE_SUPPRESSION])
   return status
 }
 

@@ -23,7 +23,8 @@
       "model": "SoundcoreD1202C",
       "pollIntervalSec": 30,
       "ctlPath": "",
-      "hideWhenDisconnected": true
+      "hideWhenDisconnected": true,
+      "notifyEnabled": true
     },
     "schema": [
       {
@@ -61,6 +62,13 @@
         "type": "boolean",
         "label": "Hide the icon when the earbuds are unreachable",
         "defaultValue": true
+      },
+      {
+        "key": "notifyEnabled",
+        "type": "boolean",
+        "label": "Desktop notifications",
+        "defaultValue": true,
+        "description": "Notify when the earbuds disconnect or a bud/case battery drops to 20% or below."
       }
     ]
   }
