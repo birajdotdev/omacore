@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.birajdotdev.omacore",
   "name": "Soundcore",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Biraj",
   "license": "MIT",
-  "description": "Battery and noise control for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI.",
+  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Soundcore",
-    "description": "Per-pod and case battery, plus ambient sound mode (Noise Cancelling / Transparency / Normal).",
+    "description": "Per-pod and case battery, ambient sound mode (Noise Cancelling / Transparency / Normal) with per-mode settings, and Sound Effects.",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",

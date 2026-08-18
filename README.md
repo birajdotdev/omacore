@@ -1,7 +1,7 @@
 <h1 align="center">Omacore</h1>
 
 <p align="center">
-  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, plus ambient sound mode (Noise Cancelling / Transparency / Normal), drawn in Omarchy's own panel idiom.
+  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, and Sound Effects, drawn in Omarchy's own panel idiom.
 </p>
 
 <p align="center">
@@ -18,21 +18,35 @@ Then follow **Setup** below to point it at your earbuds.
 
 ## What it shows
 
+- **Which earbuds** — the panel title shows the friendly model name (e.g.
+  "Soundcore R60i NC") from the "OpenSCQ30 model id" setting, not a generic
+  "Soundcore".
 - **Battery** for the left earbud, the right earbud and the case. Soundcore's
   hardware only reports ten discrete steps, so the widget shows a rounded
   percent rather than a raw sensor value.
 - **Sound mode** — Noise Cancellation, Transparency or Normal — with the
-  active mode checked, and one click or `n`/`t`/`o` to switch it.
-- **Wind noise suppression** — a toggle below the sound modes, one click or
-  `w` to flip it. Only shown when openscq30 reports the setting at all (model
-  and firmware dependent — the R60i NC / P31i support it).
+  active mode checked, and one click or `n`/`t`/`o` to switch it. Selecting a
+  mode reveals that mode's own settings below it, mirroring Soundcore's app:
+  - **Noise Cancellation** shows an inline Mode dropdown (Manual / Adaptive /
+    Multi-Scene) plus a Real-time Adaptive ANC toggle — shown regardless of
+    which of the three is selected, same as the Soundcore app:
+    - **Manual** additionally shows a 1-5 intensity level.
+    - **Multi-Scene** additionally shows a Transport / Outdoor / Indoor
+      picker as three side-by-side buttons.
+    - **Wind noise suppression** — a toggle, one click or `w` (while in
+      Noise Cancellation) to flip it.
+  - **Transparency** shows a Fully Transparent / Vocal Mode picker.
+  - **Normal** shows none of the above — only Sound Effects, below.
+- **Sound Effects** (Soundcore's spatial audio) — Music / Movie / Gaming as
+  three side-by-side buttons, always shown regardless of sound mode.
 
-This is an MVP scaffold: only battery, sound mode and wind noise suppression are wired up.
-OpenSCQ30 exposes far more per-device settings (multi-scene ANC transport
-profiles, wind noise suppression, button remapping, EQ, …) — run
-`openscq30 device -a <mac> list-settings --json` to see everything your
-earbuds support, and extend `Model.js`/`Service.qml`/`Panel.qml` the same way
-battery and sound mode are wired if you want more of it in the bar.
+All of the above are only shown when openscq30 reports the setting at all
+(model and firmware dependent — confirmed present on the R60i NC / P31i).
+OpenSCQ30 exposes still more per-device settings (button remapping, EQ,
+dual connections, …) — run `openscq30 device -a <mac> list-settings --json`
+to see everything your earbuds support, and extend
+`Model.js`/`Service.qml`/`Panel.qml` the same way the rest is wired if you
+want more of it in the bar.
 
 ## How it works
 
@@ -42,9 +56,9 @@ background daemon here. [OpenSCQ30](https://github.com/Oppzippy/OpenSCQ30)'s
 CLI opens a fresh Bluetooth connection on every invocation, so this widget
 **polls**: a
 timer runs `openscq30 device -a <mac> setting -g ... --json` every
-`pollIntervalSec` seconds (30 by default) and parses the reply. Clicking a
-sound mode row runs `setting -s ambientSoundMode=<value>` and re-polls
-afterward.
+`pollIntervalSec` seconds (30 by default) and parses the reply. Clicking any
+row (sound mode, ANC mode, scene, sound effect, a toggle, …) runs
+`setting -s <settingId>=<value>` and re-polls afterward.
 
 ## Requirements
 
@@ -139,15 +153,24 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 
 | Key | Action |
 |-----|--------|
-| `j` / `k`, `↓` / `↑` | move between sound-mode rows |
+| `j` / `k`, `↓` / `↑` | move between rows |
+| `←` / `→` | adjust the Manual ANC level, when it's the focused row |
 | `enter` / `space` | activate the current row |
 | `n` | Noise Cancellation |
 | `t` | Transparency |
 | `o` | Normal |
-| `w` | toggle wind noise suppression (if supported) |
+| `w` | toggle wind noise suppression (while in Noise Cancellation, if supported) |
 | `r` | refresh |
 | `tab` | move to the next panel |
 | `esc` | close |
+
+Every other setting (scene, transparency mode, sound effect) is reached by
+moving the cursor to its row and pressing `enter`/`space`, or by clicking it
+directly. The ANC Mode dropdown works the same way to open it; once open, its
+own `j`/`k`/`↓`/`↑` and `enter` pick an option and `esc` closes it without
+closing the panel. For a toggle row (wind noise suppression, real-time
+adaptive ANC), a mouse click only registers on the switch itself, not the
+row's label — keyboard `enter`/`space` on the row still works either way.
 
 Left click opens the panel.
 

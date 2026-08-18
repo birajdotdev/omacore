@@ -26,10 +26,30 @@ Item {
   // the panel hides the row rather than showing a toggle that will always fail.
   property bool windNoiseSuppressionSupported: false
   property bool windNoiseSuppression: false
+
+  property bool transparencyModeSupported: false
+  property string transparencyMode: ""
+  property bool noiseCancelingModeSupported: false
+  property string noiseCancelingMode: ""
+  property bool manualNoiseCancelingSupported: false
+  property int manualNoiseCancelingLevel: Model.LEVEL_UNKNOWN
+  property bool multiSceneNoiseCancelingSupported: false
+  property string multiSceneNoiseCanceling: ""
+  property bool realTimeAdaptiveNoiseCancelingSupported: false
+  property bool realTimeAdaptiveNoiseCanceling: false
+  property bool spatialAudioSupported: false
+  property bool spatialAudio: false
+  property bool spatialAudioModeSupported: false
+  property string spatialAudioMode: ""
+  // Sound Effects as the panel shows it: "Off" when spatial audio is disabled,
+  // otherwise whichever mode (Music/Movie/Gaming) spatialAudioMode holds.
+  readonly property string soundEffect: spatialAudio ? spatialAudioMode : Model.SOUND_EFFECT_OFF
+
   property string lastError: ""
   property string actionStatus: ""
 
   readonly property string macAddress: String(setting("macAddress", "") || "").trim()
+  readonly property string model: String(setting("model", "SoundcoreD1202C") || "").trim()
   readonly property int pollIntervalSec: intSetting("pollIntervalSec", 30, 10, 300)
   readonly property string ctlPath: String(setting("ctlPath", "") || "").trim()
   readonly property string resolvedBin: ctlPath !== "" ? ctlPath : "openscq30"
@@ -54,6 +74,12 @@ Item {
   // hence the separate has-pending flag.
   property bool _windNoisePending: false
   property bool _pendingWindNoiseValue: false
+
+  // Generic version of the _pendingMode/_windNoisePending pattern above, for the
+  // rest of the writable settings this widget added afterward: one shared map of
+  // "property name" -> "value we expect the next poll to report" and one shared
+  // settle timer, instead of a bespoke pending-flag/timer pair per setting.
+  property var _pendingWrites: ({})
   readonly property int settleHoldMs: 4000
   readonly property int actionStatusMs: 2200
 
@@ -119,6 +145,29 @@ Item {
     windNoiseSuppression = status.windNoiseSuppressionSupported
       ? _settleWindNoise(status.windNoiseSuppression)
       : false
+
+    transparencyModeSupported = status.transparencyModeSupported
+    transparencyMode = status.transparencyModeSupported
+      ? _settleValue("transparencyMode", status.transparencyMode) : ""
+    noiseCancelingModeSupported = status.noiseCancelingModeSupported
+    noiseCancelingMode = status.noiseCancelingModeSupported
+      ? _settleValue("noiseCancelingMode", status.noiseCancelingMode) : ""
+    manualNoiseCancelingSupported = status.manualNoiseCancelingSupported
+    manualNoiseCancelingLevel = status.manualNoiseCancelingSupported
+      ? _settleValue("manualNoiseCancelingLevel", status.manualNoiseCancelingLevel) : Model.LEVEL_UNKNOWN
+    multiSceneNoiseCancelingSupported = status.multiSceneNoiseCancelingSupported
+    multiSceneNoiseCanceling = status.multiSceneNoiseCancelingSupported
+      ? _settleValue("multiSceneNoiseCanceling", status.multiSceneNoiseCanceling) : ""
+    realTimeAdaptiveNoiseCancelingSupported = status.realTimeAdaptiveNoiseCancelingSupported
+    realTimeAdaptiveNoiseCanceling = status.realTimeAdaptiveNoiseCancelingSupported
+      ? _settleValue("realTimeAdaptiveNoiseCanceling", status.realTimeAdaptiveNoiseCanceling) : false
+    spatialAudioSupported = status.spatialAudioSupported
+    spatialAudio = status.spatialAudioSupported
+      ? _settleValue("spatialAudio", status.spatialAudio) : false
+    spatialAudioModeSupported = status.spatialAudioModeSupported
+    spatialAudioMode = status.spatialAudioModeSupported
+      ? _settleValue("spatialAudioMode", status.spatialAudioMode) : ""
+
     _checkLowBattery("leftLowNotified", "Left earbud", leftLevel, leftCharging)
     _checkLowBattery("rightLowNotified", "Right earbud", rightLevel, rightCharging)
     _checkLowBattery("caseLowNotified", "Case", caseLevel, false)
@@ -201,6 +250,71 @@ Item {
     actionProcess.running = true
   }
 
+  function _settleValue(propName, reported) {
+    if (!(propName in _pendingWrites)) return reported
+    if (reported === _pendingWrites[propName]) {
+      delete _pendingWrites[propName]
+      if (Object.keys(_pendingWrites).length === 0) pendingSettleTimer.stop()
+      return reported
+    }
+    return _pendingWrites[propName]
+  }
+
+  function _beginWrite(propName, value) {
+    _pendingWrites[propName] = value
+    root[propName] = value
+    pendingSettleTimer.restart()
+  }
+
+  function setNoiseCancelingMode(mode) {
+    if (mode === "" || !connected || !noiseCancelingModeSupported || actionProcess.running) return
+    _beginWrite("noiseCancelingMode", mode)
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_NOISE_CANCELING_MODE + "=" + mode]
+    actionProcess.running = true
+  }
+
+  function setManualNoiseCancelingLevel(level) {
+    if (!connected || !manualNoiseCancelingSupported || actionProcess.running) return
+    var clamped = Math.max(Model.MANUAL_LEVEL_MIN, Math.min(Model.MANUAL_LEVEL_MAX, Math.round(level)))
+    _beginWrite("manualNoiseCancelingLevel", clamped)
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_MANUAL_NOISE_CANCELING + "=" + clamped]
+    actionProcess.running = true
+  }
+
+  function setMultiSceneNoiseCanceling(scene) {
+    if (scene === "" || !connected || !multiSceneNoiseCancelingSupported || actionProcess.running) return
+    _beginWrite("multiSceneNoiseCanceling", scene)
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_MULTI_SCENE_NOISE_CANCELING + "=" + scene]
+    actionProcess.running = true
+  }
+
+  function setRealTimeAdaptiveNoiseCanceling(enabled) {
+    if (!connected || !realTimeAdaptiveNoiseCancelingSupported || actionProcess.running) return
+    _beginWrite("realTimeAdaptiveNoiseCanceling", enabled)
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING + "=" + (enabled ? "true" : "false")]
+    actionProcess.running = true
+  }
+
+  function setTransparencyMode(mode) {
+    if (mode === "" || !connected || !transparencyModeSupported || actionProcess.running) return
+    _beginWrite("transparencyMode", mode)
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting", "-s", Model.SETTING_TRANSPARENCY_MODE + "=" + mode]
+    actionProcess.running = true
+  }
+
+  // Sets spatialAudio=true and spatialAudioMode=<effect> together in one call,
+  // same as openscq30's own app does — this widget doesn't offer a way to turn
+  // spatial audio off, only to pick which mode it plays in.
+  function setSoundEffect(effect) {
+    if (effect === "" || !connected || !spatialAudioSupported || !spatialAudioModeSupported || actionProcess.running) return
+    _beginWrite("spatialAudio", true)
+    _beginWrite("spatialAudioMode", effect)
+    actionProcess.command = [resolvedBin, "device", "-a", macAddress, "setting",
+      "-s", Model.SETTING_SPATIAL_AUDIO + "=true",
+      "-s", Model.SETTING_SPATIAL_AUDIO_MODE + "=" + effect]
+    actionProcess.running = true
+  }
+
   Timer {
     id: pollTimer
     interval: root.pollIntervalSec * 1000
@@ -232,6 +346,13 @@ Item {
     interval: root.settleHoldMs
     repeat: false
     onTriggered: { root._windNoisePending = false; root.refresh() }
+  }
+
+  Timer {
+    id: pendingSettleTimer
+    interval: root.settleHoldMs
+    repeat: false
+    onTriggered: { root._pendingWrites = {}; root.refresh() }
   }
 
   Timer {
@@ -282,6 +403,8 @@ Item {
         settleTimer.stop()
         root._windNoisePending = false
         windNoiseSettleTimer.stop()
+        root._pendingWrites = {}
+        pendingSettleTimer.stop()
         root.actionStatus = Model.elideError(actionErr.text) || "openscq30 rejected the command"
         actionStatusTimer.restart()
       }

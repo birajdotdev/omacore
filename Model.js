@@ -11,6 +11,21 @@ var SETTING_CHARGING_RIGHT = "isChargingRight"
 // Absent from -g's reply rather than erroring, so it's polled speculatively like the rest.
 var SETTING_WIND_NOISE_SUPPRESSION = "windNoiseSuppression"
 
+// Sub-settings under NoiseCanceling / Transparency ambient sound modes, and the
+// Sound Effects (spatial audio) settings, all confirmed present on D1202/D1202C via
+// `openscq30 device -a <mac> list-settings --json`. Same speculative-polling caveat
+// as windNoiseSuppression applies to each: only add a settingId here once you have
+// confirmed (via list-settings) that every model this widget targets exposes it —
+// unlike an Information setting simply being absent from the reply, a settingId the
+// device's schema does not know about at all fails the *entire* -g batch.
+var SETTING_TRANSPARENCY_MODE = "transparencyMode"
+var SETTING_NOISE_CANCELING_MODE = "noiseCancelingMode"
+var SETTING_MANUAL_NOISE_CANCELING = "manualNoiseCanceling"
+var SETTING_MULTI_SCENE_NOISE_CANCELING = "multiSceneNoiseCanceling"
+var SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING = "realTimeAdaptiveNoiseCanceling"
+var SETTING_SPATIAL_AUDIO = "spatialAudio"
+var SETTING_SPATIAL_AUDIO_MODE = "spatialAudioMode"
+
 // The settings this widget polls on every refresh.
 var POLL_SETTING_IDS = [
   SETTING_AMBIENT_SOUND_MODE,
@@ -19,7 +34,14 @@ var POLL_SETTING_IDS = [
   SETTING_BATTERY_CASE,
   SETTING_CHARGING_LEFT,
   SETTING_CHARGING_RIGHT,
-  SETTING_WIND_NOISE_SUPPRESSION
+  SETTING_WIND_NOISE_SUPPRESSION,
+  SETTING_TRANSPARENCY_MODE,
+  SETTING_NOISE_CANCELING_MODE,
+  SETTING_MANUAL_NOISE_CANCELING,
+  SETTING_MULTI_SCENE_NOISE_CANCELING,
+  SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING,
+  SETTING_SPATIAL_AUDIO,
+  SETTING_SPATIAL_AUDIO_MODE
 ]
 
 // AmbientSoundMode's three raw values on the D1202/D1202C (R60i NC / P31i),
@@ -29,16 +51,85 @@ var MODE_TRANSPARENCY = "Transparency"
 var MODE_NORMAL = "Normal"
 var MODES = [MODE_NOISE_CANCELING, MODE_TRANSPARENCY, MODE_NORMAL]
 
+// TransparencyMode's raw values, shown only while ambientSoundMode is Transparency.
+var TRANSPARENCY_FULLY = "FullyTransparent"
+var TRANSPARENCY_VOCAL = "VocalMode"
+var TRANSPARENCY_MODES = [TRANSPARENCY_FULLY, TRANSPARENCY_VOCAL]
+
+// NoiseCancelingMode's raw values, shown only while ambientSoundMode is NoiseCanceling.
+var NC_MODE_MANUAL = "Manual"
+var NC_MODE_ADAPTIVE = "Adaptive"
+var NC_MODE_MULTI_SCENE = "MultiScene"
+var NC_SUBMODES = [NC_MODE_MANUAL, NC_MODE_ADAPTIVE, NC_MODE_MULTI_SCENE]
+
+// manualNoiseCanceling's i32Range bounds (confirmed via list-settings: start 1, end 5).
+var MANUAL_LEVEL_MIN = 1
+var MANUAL_LEVEL_MAX = 5
+
+// MultiSceneNoiseCanceling's raw values, shown only while noiseCancelingMode is MultiScene.
+var SCENE_TRANSPORT = "Transport"
+var SCENE_OUTDOOR = "Outdoor"
+var SCENE_INDOOR = "Indoor"
+var SCENES = [SCENE_TRANSPORT, SCENE_OUTDOOR, SCENE_INDOOR]
+
+// Sound Effects (Soundcore's spatial audio). The panel only offers these
+// three — picking one sets spatialAudio=true and spatialAudioMode=<value>
+// together. SOUND_EFFECT_OFF isn't offered as a button; it's the sentinel
+// Service.soundEffect reports when spatialAudio is off (e.g. set that way
+// outside this widget), so nothing shows selected rather than showing "Off".
+var SOUND_EFFECT_OFF = "Off"
+var SOUND_EFFECT_MUSIC = "Music"
+var SOUND_EFFECT_MOVIE = "Movie"
+var SOUND_EFFECT_GAMING = "Gaming"
+var SOUND_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMING]
+
 // Level the widget shows when a fraction failed to parse or the setting was absent.
 var LEVEL_UNKNOWN = -1
 
 var MAX_ERROR_CHARS = 140
 var ELIDED_ERROR_CHARS = 137
 
+// Friendly names for the "OpenSCQ30 model id" setting (manifest.json's `model`),
+// so the panel can show which earbuds these are rather than a generic "Soundcore".
+// Covers only the two models this widget actually targets — see README.
+function modelDisplayName(modelId) {
+  if (modelId === "SoundcoreD1202C") return "Soundcore R60i NC"
+  if (modelId === "SoundcoreD1202") return "Soundcore P31i"
+  return "Soundcore"
+}
+
 function modeLabel(mode) {
   if (mode === MODE_NOISE_CANCELING) return "Noise Cancellation"
   if (mode === MODE_TRANSPARENCY) return "Transparency"
   if (mode === MODE_NORMAL) return "Normal"
+  return "Unknown"
+}
+
+function transparencyModeLabel(mode) {
+  if (mode === TRANSPARENCY_FULLY) return "Fully Transparent"
+  if (mode === TRANSPARENCY_VOCAL) return "Vocal Mode"
+  return "Unknown"
+}
+
+function ncSubModeLabel(mode) {
+  if (mode === NC_MODE_MANUAL) return "Manual"
+  if (mode === NC_MODE_ADAPTIVE) return "Adaptive"
+  if (mode === NC_MODE_MULTI_SCENE) return "Multi-Scene"
+  return "Unknown"
+}
+
+function sceneLabel(scene) {
+  if (scene === SCENE_TRANSPORT) return "Transport"
+  if (scene === SCENE_OUTDOOR) return "Outdoor"
+  if (scene === SCENE_INDOOR) return "Indoor"
+  return "Unknown"
+}
+
+function soundEffectLabel(effect) {
+  if (effect === SOUND_EFFECT_OFF) return "Off"
+  if (effect === SOUND_EFFECT_MUSIC) return "Music"
+  if (effect === SOUND_EFFECT_MOVIE) return "Movie"
+  if (effect === SOUND_EFFECT_GAMING) return "Gaming"
   return "Unknown"
 }
 
@@ -106,6 +197,18 @@ function parseSettingsJson(raw) {
   return { ok: true, map: map }
 }
 
+function has(map, id) {
+  return Object.prototype.hasOwnProperty.call(map, id)
+}
+
+// manualNoiseCanceling arrives as a JSON number already (i32Range), unlike the
+// string-typed Select/Information settings elsewhere in this file.
+function levelFromNumber(value) {
+  var n = typeof value === "number" ? value : parseInt(value, 10)
+  if (!isFinite(n)) return LEVEL_UNKNOWN
+  return Math.max(MANUAL_LEVEL_MIN, Math.min(MANUAL_LEVEL_MAX, Math.round(n)))
+}
+
 // Full shape on every path, so the panel never reads undefined off a parse failure.
 function defaultStatus() {
   return {
@@ -117,7 +220,21 @@ function defaultStatus() {
     leftCharging: false,
     rightCharging: false,
     windNoiseSuppressionSupported: false,
-    windNoiseSuppression: false
+    windNoiseSuppression: false,
+    transparencyModeSupported: false,
+    transparencyMode: "",
+    noiseCancelingModeSupported: false,
+    noiseCancelingMode: "",
+    manualNoiseCancelingSupported: false,
+    manualNoiseCancelingLevel: LEVEL_UNKNOWN,
+    multiSceneNoiseCancelingSupported: false,
+    multiSceneNoiseCanceling: "",
+    realTimeAdaptiveNoiseCancelingSupported: false,
+    realTimeAdaptiveNoiseCanceling: false,
+    spatialAudioSupported: false,
+    spatialAudio: false,
+    spatialAudioModeSupported: false,
+    spatialAudioMode: ""
   }
 }
 
@@ -130,8 +247,31 @@ function statusFromMap(map) {
   status.caseLevel = levelFromFraction(map[SETTING_BATTERY_CASE])
   status.leftCharging = boolFromString(map[SETTING_CHARGING_LEFT])
   status.rightCharging = boolFromString(map[SETTING_CHARGING_RIGHT])
-  status.windNoiseSuppressionSupported = Object.prototype.hasOwnProperty.call(map, SETTING_WIND_NOISE_SUPPRESSION)
+
+  status.windNoiseSuppressionSupported = has(map, SETTING_WIND_NOISE_SUPPRESSION)
   status.windNoiseSuppression = boolFromToggle(map[SETTING_WIND_NOISE_SUPPRESSION])
+
+  status.transparencyModeSupported = has(map, SETTING_TRANSPARENCY_MODE)
+  status.transparencyMode = String(map[SETTING_TRANSPARENCY_MODE] || "")
+
+  status.noiseCancelingModeSupported = has(map, SETTING_NOISE_CANCELING_MODE)
+  status.noiseCancelingMode = String(map[SETTING_NOISE_CANCELING_MODE] || "")
+
+  status.manualNoiseCancelingSupported = has(map, SETTING_MANUAL_NOISE_CANCELING)
+  status.manualNoiseCancelingLevel = levelFromNumber(map[SETTING_MANUAL_NOISE_CANCELING])
+
+  status.multiSceneNoiseCancelingSupported = has(map, SETTING_MULTI_SCENE_NOISE_CANCELING)
+  status.multiSceneNoiseCanceling = String(map[SETTING_MULTI_SCENE_NOISE_CANCELING] || "")
+
+  status.realTimeAdaptiveNoiseCancelingSupported = has(map, SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING)
+  status.realTimeAdaptiveNoiseCanceling = boolFromToggle(map[SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING])
+
+  status.spatialAudioSupported = has(map, SETTING_SPATIAL_AUDIO)
+  status.spatialAudio = boolFromToggle(map[SETTING_SPATIAL_AUDIO])
+
+  status.spatialAudioModeSupported = has(map, SETTING_SPATIAL_AUDIO_MODE)
+  status.spatialAudioMode = String(map[SETTING_SPATIAL_AUDIO_MODE] || "")
+
   return status
 }
 
