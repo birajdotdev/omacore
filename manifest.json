@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.birajdotdev.omacore",
+  "name": "Soundcore",
+  "version": "0.1.0",
+  "author": "Biraj",
+  "license": "MIT",
+  "description": "Battery and noise control for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Soundcore",
+    "description": "Per-pod and case battery, plus ambient sound mode (Noise Cancelling / Transparency / Normal).",
+    "category": "Audio",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "macAddress": "",
+      "model": "SoundcoreD1202C",
+      "pollIntervalSec": 30,
+      "ctlPath": "",
+      "hideWhenDisconnected": true
+    },
+    "schema": [
+      {
+        "key": "macAddress",
+        "type": "string",
+        "label": "Bluetooth MAC address",
+        "defaultValue": "",
+        "description": "Pair the earbuds over Bluetooth first, then register them with `openscq30 paired-devices add -a <mac> -m <model>` and paste the same MAC address here, e.g. AA:BB:CC:DD:EE:FF."
+      },
+      {
+        "key": "model",
+        "type": "string",
+        "label": "OpenSCQ30 model id",
+        "defaultValue": "SoundcoreD1202C",
+        "description": "SoundcoreD1202C = Soundcore R60i NC, SoundcoreD1202 = P31i (see `openscq30 list-models`). Only needed for `paired-devices add`; the widget itself does not send this."
+      },
+      {
+        "key": "pollIntervalSec",
+        "type": "integer",
+        "label": "Poll interval (seconds)",
+        "min": 10,
+        "max": 300,
+        "step": 5,
+        "defaultValue": 30
+      },
+      {
+        "key": "ctlPath",
+        "type": "path",
+        "label": "Path to the openscq30 CLI",
+        "defaultValue": "",
+        "description": "Leave empty to find `openscq30` on PATH."
+      },
+      {
+        "key": "hideWhenDisconnected",
+        "type": "boolean",
+        "label": "Hide the icon when the earbuds are unreachable",
+        "defaultValue": true
+      }
+    ]
+  }
+}
