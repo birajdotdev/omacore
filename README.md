@@ -14,7 +14,7 @@
 
 ## How it looks
 
-Click the Soundcore icon (right side of the bar) to open the panel above —
+Click the Omacore icon (right side of the bar) to open the panel above —
 see **What it shows** below for what's in it.
 
 ## Install

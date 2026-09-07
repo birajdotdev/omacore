@@ -233,7 +233,7 @@ fi
 say "Restarting the Omarchy shell"
 omarchy restart shell || true
 
-say "Done! The Soundcore widget is now in the right side of your bar."
+say "Done! The Omacore widget is now in the right side of your bar."
 echo
 echo "  Click the icon to see battery + ANC settings."
 echo "  Or edit settings later: omarchy bar set $PLUGIN_ID <key> <value>"
