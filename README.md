@@ -8,13 +8,38 @@
   The <a href="https://omarchyplugins.com/plugin.html?id=io.github.thisisgm.omapods">omapods</a> plugin does this for AirPods. Omacore is the same idea for Soundcore.
 </p>
 
+<p align="center">
+  <img src="screenshots/omacore.png" alt="Omacore panel showing the Soundcore R60i NC battery, sound mode, ANC settings and sound effects from the Omarchy bar" width="360">
+</p>
+
+## How it looks
+
+Click the Soundcore icon (right side of the bar) to open the panel above —
+see **What it shows** below for what's in it.
+
 ## Install
+
+Your earbuds must be paired over Bluetooth first (`omarchy bluetooth device`
+or the stock Bluetooth panel). Then run the setup script, which installs
+OpenSCQ30 (if missing), detects your earbuds, registers them, installs the
+plugin and puts the widget in your bar:
 
 ```bash
 omarchy plugin add https://github.com/birajdotdev/omacore.git --enable
+~/.config/omarchy/plugins/io.github.birajdotdev.omacore/setup.sh
 ```
 
-Then follow **Setup** below to point it at your earbuds.
+Or clone directly and run it:
+
+```bash
+git clone https://github.com/birajdotdev/omacore.git /tmp/omacore
+/tmp/omacore/setup.sh
+```
+
+The script is interactive but safe to re-run at any time (idempotent), and
+accepts `--yes` to pick the first Soundcore device it finds without prompts.
+
+If you'd rather set everything up by hand, follow **Manual setup** below.
 
 ## What it shows
 
@@ -63,50 +88,43 @@ row (sound mode, ANC mode, scene, sound effect, a toggle, …) runs
 ## Requirements
 
 - **[OpenSCQ30](https://github.com/Oppzippy/OpenSCQ30)'s CLI**, `openscq30`,
-  on `PATH` (or point the "Path to the openscq30 CLI" setting at it). It is
-  free/open-source (GPL-3.0-or-later) and not written by or affiliated with
-  this plugin's author — it just happens to be the CLI this widget shells
-  out to.
+  on `PATH` (the setup script installs it for you). It is free/open-source
+  (GPL-3.0-or-later) and not written by or affiliated with this plugin's
+  author — it just happens to be the CLI this widget shells out to.
 
   **Version matters for newer devices.** R60i NC / P31i support landed in
-  OpenSCQ30 v2.10.0; the `openscq30-cli-bin` AUR package was pinned to
-  v2.7.0 at the time this was written (check `pacman -Qi openscq30-cli-bin`
-  / the AUR page — it may since have caught up). If `openscq30 list-models`
-  doesn't list `SoundcoreD1202C`, skip the AUR package and grab the official
-  binary release instead:
+  OpenSCQ30 v2.10.0. The `openscq30-cli-bin` AUR package may lag behind
+  (it was pinned to v2.7.0 at the time this was written) — if
+  `openscq30 list-models` doesn't list your `Soundcore...` id, skip the AUR
+  package and let the setup script grab the official binary release instead.
+  To install that manually:
 
   ```bash
   mkdir -p ~/.local/opt/openscq30
-  gh release download vX.Y.Z -R Oppzippy/OpenSCQ30 \
+  gh release download v2.12.0 -R Oppzippy/OpenSCQ30 \
     -p 'openscq30-cli-linux-x86_64' -D ~/.local/opt/openscq30
   chmod +x ~/.local/opt/openscq30/openscq30-cli-linux-x86_64
-  # Point the plugin's "Path to the openscq30 CLI" setting at that file,
-  # since it won't be on PATH under that name.
+  ln -sf ~/.local/opt/openscq30/openscq30-cli-linux-x86_64 ~/.local/bin/openscq30
   ```
 
-  Otherwise, install the prebuilt AUR package:
-
-  ```bash
-  yay -S openscq30-cli-bin
-  # or, to build from source instead of using the prebuilt binary:
-  yay -S openscq30-cli
-  ```
+  (Substitute the latest release tag for `v2.12.0` if a newer one exists.)
 
 - Earbuds paired over the normal Bluetooth flow first (`omarchy bluetooth
   device` or the stock Bluetooth panel).
 
-## Setup
+## Manual setup
 
-1. Install `openscq30` (above, picking whichever path gets you a build new
-   enough for your model) and pair your earbuds over Bluetooth as usual.
+If you'd rather not use the setup script, here's what it does by hand
+(assumes openscq30 from **Requirements** above is installed, and your
+earbuds are paired over Bluetooth):
 
-2. Find the MAC address:
+1. Find the MAC address:
 
    ```bash
    bluetoothctl devices | grep -i soundcore
    ```
 
-3. Register the device with OpenSCQ30 (its CLI keeps its own small database
+2. Register the device with OpenSCQ30 (its CLI keeps its own small database
    mapping MAC address → model, separate from BlueZ's pairing):
 
    ```bash
@@ -119,13 +137,13 @@ row (sound mode, ANC mode, scene, sound effect, a toggle, …) runs
    changed between OpenSCQ30 versions, so trust `list-models` over any id
    written down here.
 
-4. Sanity-check it talks to the earbuds:
+3. Sanity-check it talks to the earbuds:
 
    ```bash
    openscq30 device -a AA:BB:CC:DD:EE:FF list-settings --json | less
    ```
 
-5. Install and enable the plugin (skip `add` if you already ran the
+4. Install and enable the plugin (skip `add` if you already ran the
    **Install** command above), then set the same MAC address in its settings:
 
    ```bash
