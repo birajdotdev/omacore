@@ -30,6 +30,13 @@ omarchy plugin add https://github.com/birajdotdev/omacore.git --enable
 That's it. The widget auto-detects whichever Soundcore device is currently
 connected over Bluetooth — no MAC address to configure.
 
+If `openscq30` isn't on `PATH` yet, the bar icon shows in the alert color and
+the panel offers an **Install OpenSCQ30 CLI** button (or press `i`) — this
+opens the bundled `omacore-install` in a terminal and drops the official
+binary into `~/.local/bin`, no sudo needed. You still have to register the
+device with OpenSCQ30 afterwards (see **Setup**), but the CLI install itself
+is now a click away.
+
 ## What it shows
 
 - **Which earbuds** — the panel title shows the friendly Bluetooth device
@@ -169,7 +176,7 @@ Left click opens the panel.
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Poll interval (seconds) | 30 | How often the widget re-runs `omacore-status`. |
-| Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. |
+| Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is a missing `openscq30` CLI rather than unreachable earbuds, so the install button stays reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 
 ## Credits

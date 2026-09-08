@@ -37,6 +37,10 @@ Item {
   property string lastError: ""
   property string actionStatus: ""
 
+  // True when omacore-status couldn't find the OpenSCQ30 CLI on PATH. The
+  // panel then offers an in-widget install button instead of hiding silently.
+  property bool cliMissing: false
+
   // Populated by the discovery script — the friendly Bluetooth device name
   // (e.g. "Soundcore R60i NC"), used for the panel hero title.
   property string deviceName: "Soundcore"
@@ -67,6 +71,7 @@ Item {
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.birajdotdev.omacore"
   readonly property string statusScript: pluginDir + "/omacore-status"
   readonly property string setScript: pluginDir + "/omacore-set"
+  readonly property string installScript: pluginDir + "/omacore-install"
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -92,12 +97,26 @@ Item {
     pollWatchdog.restart()
   }
 
+  // Opens the bundled omacore-install in a visible terminal so the user can
+  // watch the download; no sudo needed (installs into ~/.local). The regular
+  // poll picks the CLI up once it lands on PATH, so no manual refresh needed.
+  function installCli() {
+    if (installProcess.running) return
+    installProcess.command = ["omarchy-launch-terminal", installScript]
+    installProcess.running = true
+  }
+
   function applyStatus(raw) {
     var parsed = Model.parseStatus(raw)
     if (!parsed.connected) {
+      var missing = parsed.cliMissing === true
+      if (missing !== cliMissing) cliMissing = missing
       if (connected) _noteDisconnected("No paired Soundcore device is connected.")
+      else if (missing) lastError = "openscq30 / openscq30-cli not found on PATH."
       return
     }
+
+    cliMissing = false
 
     discoveredMac = parsed.mac || ""
     deviceName = parsed.name || "Soundcore"
@@ -365,5 +384,12 @@ Item {
       }
       root.refresh()
     }
+  }
+
+  Process {
+    id: installProcess
+    running: false
+    command: []
+    onExited: root.refresh()
   }
 }

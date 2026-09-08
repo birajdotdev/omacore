@@ -20,15 +20,19 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
-  readonly property color barIconColor: pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55)
+  // Missing CLI is worth showing as an alert in the bar even when the buds are
+  // (as a result) unreachable — a broken install should be loud, not invisible.
+  readonly property color barIconColor: pods.cliMissing ? urgent
+    : (pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55))
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== ""
+  readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== "" && !pods.cliMissing
   readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
   readonly property bool transparencySectionVisible: pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported
   readonly property var ncModeOptions: Model.NC_SUBMODES.map(function (m) { return { value: m, label: Model.ncSubModeLabel(m) } })
 
   readonly property var cursorRows: {
     var rows = []
+    if (pods.cliMissing) { rows.push("installcli"); return rows }
     if (!pods.hasEarbuds) return rows
     for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
 
@@ -69,6 +73,8 @@ Panel {
 
   function activateCursor() {
     var name = cursorRow
+    if (name === "") return
+    if (name === "installcli") { pods.installCli(); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "ncmode") ncModeDropdown.toggle()
     else if (name.indexOf("scene:") === 0) pods.setMultiSceneNoiseCanceling(name.substring(6))
@@ -86,7 +92,7 @@ Panel {
     cursorIndex = at
   }
 
-  visible: !hideWhenDisconnected || pods.hasEarbuds
+  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -166,6 +172,7 @@ Panel {
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
+        else if (key === "i" && pods.cliMissing) pods.installCli()
         else if (!pods.hasEarbuds) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
@@ -192,7 +199,7 @@ Panel {
           PanelHero {
             id: hero
             width: parent.width
-            title: pods.hasEarbuds ? pods.deviceName : "Soundcore"
+            title: pods.cliMissing ? "OpenSCQ30 not found" : (pods.hasEarbuds ? pods.deviceName : "Soundcore")
             meta: pods.hasEarbuds
               ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
                   ? " · " + Model.ncSubModeLabel(pods.noiseCancelingMode) : "")
@@ -206,6 +213,36 @@ Panel {
                 iconSize: Style.font.display
                 color: pods.hasEarbuds ? root.foreground : root.dim
               }
+            }
+          }
+
+          Column {
+            visible: root.opened && pods.cliMissing
+            width: parent.width
+            spacing: Style.space(6)
+
+            Text {
+              width: parent.width
+              text: "OpenSCQ30 (the program this widget talks to) is not installed.\n"
+                + "Install it now — no sudo needed, it goes into ~/.local."
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Button {
+              width: parent.width
+              text: "Install OpenSCQ30 CLI"
+              fontSize: Style.font.bodySmall
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              horizontalPadding: Style.spacing.controlPaddingX
+              verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+              bordered: true
+              hasCursor: root.rowHasCursor("installcli")
+              onClicked: pods.installCli()
+              onHovered: function (h) { if (h) root.focusRow("installcli") }
             }
           }
 

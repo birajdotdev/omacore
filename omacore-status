@@ -22,7 +22,7 @@ elif command -v openscq30-cli >/dev/null 2>&1; then
 fi
 
 if [ -z "$CTL" ]; then
-  echo '{"connected":false}'
+  echo '{"connected":false,"cliMissing":true,"error":"openscq30 / openscq30-cli not found on PATH"}'
   exit 0
 fi
 
