@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Usage: omacore-set <mac-address> <settingId=value> [<settingId=value> ...]
+set -euo pipefail
+
+mac="$1"
+shift
+
+args=()
+for kv in "$@"; do
+  args+=(--set "$kv")
+done
+
+exec openscq30 device --mac-address "$mac" setting "${args[@]}"

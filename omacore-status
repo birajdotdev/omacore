@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Auto-discovers which paired Soundcore device is currently connected over
+# Bluetooth, fetches its settings schema via list-settings, then reads the
+# current values of every relevant setting.  Emits one JSON blob:
+#
+#   { connected, mac, name, model,
+#     schema: [ { categoryId, settings: [ { settingId, type, options?, ... } ] } ],
+#     values: { settingId: value, ... } }
+#
+# No user configuration required — just Bluetooth pairing + OpenSCQ30 registration.
+set -uo pipefail
+
+paired_json=$(openscq30 paired-devices list --json 2>/dev/null)
+[ -z "$paired_json" ] && paired_json='[]'
+
+connected_raw=$(bluetoothctl devices Connected 2>/dev/null)
+
+mac=""
+name=""
+model=""
+
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  cmac=$(awk '{print $2}' <<<"$line")
+  cname=$(cut -d' ' -f3- <<<"$line")
+  m=$(jq -r --arg mac "$cmac" '.[] | select(.macAddress | ascii_upcase == ($mac | ascii_upcase)) | .model' <<<"$paired_json" 2>/dev/null)
+  if [ -n "$m" ] && [ "$m" != "null" ]; then
+    mac="$cmac"
+    name="$cname"
+    model="$m"
+    break
+  fi
+done <<<"$connected_raw"
+
+if [ -z "$mac" ]; then
+  echo '{"connected":false}'
+  exit 0
+fi
+
+schema_json=$(openscq30 device --mac-address "$mac" list-settings --json 2>/dev/null)
+[ -z "$schema_json" ] && schema_json='[]'
+
+filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation")]' <<<"$schema_json")
+
+ids=$(jq -r '
+  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation")
+       | .settings[] | select(.type=="select" or .type=="optionalSelect" or .type=="toggle"
+                                or .type=="equalizer" or .type=="information")
+       | .settingId]
+  | unique | .[]
+' <<<"$schema_json" 2>/dev/null)
+
+get_args=()
+while IFS= read -r id; do
+  [ -z "$id" ] && continue
+  get_args+=(--get "$id")
+done <<<"$ids"
+
+values_json='[]'
+if [ "${#get_args[@]}" -gt 0 ]; then
+  values_json=$(openscq30 device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null)
+  [ -z "$values_json" ] && values_json='[]'
+fi
+
+values_map=$(jq '[.[] | {(.settingId): .value.value}] | add // {}' <<<"$values_json")
+
+jq -n \
+  --arg mac "$mac" \
+  --arg name "$name" \
+  --arg model "$model" \
+  --argjson schema "$filtered_schema" \
+  --argjson values "$values_map" \
+  '{connected:true, mac:$mac, name:$name, model:$model, schema:$schema, values:$values}'

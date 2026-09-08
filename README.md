@@ -19,33 +19,22 @@ see **What it shows** below for what's in it.
 
 ## Install
 
-Your earbuds must be paired over Bluetooth first (`omarchy bluetooth device`
-or the stock Bluetooth panel). Then run the setup script, which installs
-OpenSCQ30 (if missing), detects your earbuds, registers them, installs the
-plugin and puts the widget in your bar:
+Your earbuds must be paired over Bluetooth (`omarchy bluetooth device` or
+the stock Bluetooth panel) and registered with OpenSCQ30 (step 2 of
+**Setup** below). Then:
 
 ```bash
 omarchy plugin add https://github.com/birajdotdev/omacore.git --enable
-~/.config/omarchy/plugins/io.github.birajdotdev.omacore/setup.sh
 ```
 
-Or clone directly and run it:
-
-```bash
-git clone https://github.com/birajdotdev/omacore.git /tmp/omacore
-/tmp/omacore/setup.sh
-```
-
-The script is interactive but safe to re-run at any time (idempotent), and
-accepts `--yes` to pick the first Soundcore device it finds without prompts.
-
-If you'd rather set everything up by hand, follow **Manual setup** below.
+That's it. The widget auto-detects whichever Soundcore device is currently
+connected over Bluetooth — no MAC address to configure.
 
 ## What it shows
 
-- **Which earbuds** — the panel title shows the friendly model name (e.g.
-  "Soundcore R60i NC") from the "OpenSCQ30 model id" setting, not a generic
-  "Soundcore".
+- **Which earbuds** — the panel title shows the friendly Bluetooth device
+  name (e.g. "Soundcore R60i NC") that the discovery script finds, not a
+  generic "Soundcore".
 - **Battery** for the left earbud, the right earbud and the case. Soundcore's
   hardware only reports ten discrete steps, so the widget shows a rounded
   percent rather than a raw sensor value.
@@ -79,25 +68,27 @@ Unlike [omapods](https://github.com/thisisgm/omarchy-pods) (AirPods, which
 speaks Apple's own BLE protocol via a background daemon), there is no
 background daemon here. [OpenSCQ30](https://github.com/Oppzippy/OpenSCQ30)'s
 CLI opens a fresh Bluetooth connection on every invocation, so this widget
-**polls**: a
-timer runs `openscq30 device -a <mac> setting -g ... --json` every
-`pollIntervalSec` seconds (30 by default) and parses the reply. Clicking any
-row (sound mode, ANC mode, scene, sound effect, a toggle, …) runs
-`setting -s <settingId>=<value>` and re-polls afterward.
+**polls** — the bundled `omacore-status` script discovers whichever paired
+Soundcore device is currently connected over Bluetooth (cross-referencing
+`bluetoothctl devices Connected` with OpenSCQ30's `paired-devices list`),
+reads the device's capability schema via `list-settings --json`, then fetches
+the current value of every relevant setting. The wrapper script `omacore-set`
+writes a setting back. No MAC address needs to be configured anywhere —
+discovery is automatic on every poll.
 
 ## Requirements
 
 - **[OpenSCQ30](https://github.com/Oppzippy/OpenSCQ30)'s CLI**, `openscq30`,
-  on `PATH` (the setup script installs it for you). It is free/open-source
-  (GPL-3.0-or-later) and not written by or affiliated with this plugin's
-  author — it just happens to be the CLI this widget shells out to.
+  on `PATH`. It is free/open-source (GPL-3.0-or-later) and not written by or
+  affiliated with this plugin's author — it just happens to be the CLI this
+  widget shells out to.
 
   **Version matters for newer devices.** R60i NC / P31i support landed in
   OpenSCQ30 v2.10.0. The `openscq30-cli-bin` AUR package may lag behind
   (it was pinned to v2.7.0 at the time this was written) — if
   `openscq30 list-models` doesn't list your `Soundcore...` id, skip the AUR
-  package and let the setup script grab the official binary release instead.
-  To install that manually:
+  package and grab the official binary release instead, linking it onto
+  `PATH`:
 
   ```bash
   mkdir -p ~/.local/opt/openscq30
@@ -112,20 +103,17 @@ row (sound mode, ANC mode, scene, sound effect, a toggle, …) runs
 - Earbuds paired over the normal Bluetooth flow first (`omarchy bluetooth
   device` or the stock Bluetooth panel).
 
-## Manual setup
+## Setup
 
-If you'd rather not use the setup script, here's what it does by hand
-(assumes openscq30 from **Requirements** above is installed, and your
-earbuds are paired over Bluetooth):
+The plugin itself needs no configuration once installed. The only prerequisite
+is that your earbuds are paired over Bluetooth **and** registered with
+OpenSCQ30 (OpenSCQ30 keeps its own small database mapping MAC address →
+model, separate from BlueZ's pairing):
 
-1. Find the MAC address:
+1. Install `openscq30` (above, picking whichever path gets you a build new
+   enough for your model) and pair your earbuds over Bluetooth as usual.
 
-   ```bash
-   bluetoothctl devices | grep -i soundcore
-   ```
-
-2. Register the device with OpenSCQ30 (its CLI keeps its own small database
-   mapping MAC address → model, separate from BlueZ's pairing):
+2. Register the device with OpenSCQ30:
 
    ```bash
    openscq30 paired-devices add -a AA:BB:CC:DD:EE:FF -m SoundcoreD1202C
@@ -137,24 +125,8 @@ earbuds are paired over Bluetooth):
    changed between OpenSCQ30 versions, so trust `list-models` over any id
    written down here.
 
-3. Sanity-check it talks to the earbuds:
-
-   ```bash
-   openscq30 device -a AA:BB:CC:DD:EE:FF list-settings --json | less
-   ```
-
-4. Install and enable the plugin (skip `add` if you already ran the
-   **Install** command above), then set the same MAC address in its settings:
-
-   ```bash
-   omarchy plugin add https://github.com/birajdotdev/omacore.git --enable
-   omarchy bar set io.github.birajdotdev.omacore macAddress "AA:BB:CC:DD:EE:FF"
-   # If openscq30 isn't on PATH under that name (see Requirements above):
-   omarchy bar set io.github.birajdotdev.omacore ctlPath "/full/path/to/openscq30"
-   ```
-
-   Settings can also be edited later from the Omarchy menu → Plugins, or
-   directly in `~/.config/omarchy/shell.json`.
+Once the device is paired and now `openscq30 paired-devices add`-registered,
+the widget finds it automatically whenever it's connected over Bluetooth.
 
 ## Update / Remove
 
@@ -196,10 +168,7 @@ Left click opens the panel.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
-| Bluetooth MAC address | empty | Required. Same address used in `paired-devices add`. |
-| OpenSCQ30 model id | `SoundcoreD1202C` | Reference only, for the `paired-devices add` command above. |
-| Poll interval (seconds) | 30 | How often the widget re-runs `openscq30 device ... setting -g ...`. |
-| Path to the openscq30 CLI | empty | Leave empty to find `openscq30` on `PATH`. |
+| Poll interval (seconds) | 30 | How often the widget re-runs `omacore-status`. |
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 

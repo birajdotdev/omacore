@@ -192,7 +192,7 @@ Panel {
           PanelHero {
             id: hero
             width: parent.width
-            title: Model.modelDisplayName(pods.model)
+            title: pods.hasEarbuds ? pods.deviceName : "Soundcore"
             meta: pods.hasEarbuds
               ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
                   ? " · " + Model.ncSubModeLabel(pods.noiseCancelingMode) : "")

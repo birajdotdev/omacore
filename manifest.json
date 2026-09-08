@@ -19,28 +19,11 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "macAddress": "",
-      "model": "SoundcoreD1202C",
       "pollIntervalSec": 30,
-      "ctlPath": "",
       "hideWhenDisconnected": true,
       "notifyEnabled": true
     },
     "schema": [
-      {
-        "key": "macAddress",
-        "type": "string",
-        "label": "Bluetooth MAC address",
-        "defaultValue": "",
-        "description": "Pair the earbuds over Bluetooth first, then register them with `openscq30 paired-devices add -a <mac> -m <model>` and paste the same MAC address here, e.g. AA:BB:CC:DD:EE:FF."
-      },
-      {
-        "key": "model",
-        "type": "string",
-        "label": "OpenSCQ30 model id",
-        "defaultValue": "SoundcoreD1202C",
-        "description": "SoundcoreD1202C = Soundcore R60i NC, SoundcoreD1202 = P31i (see `openscq30 list-models`). Only needed for `paired-devices add`; the widget itself does not send this."
-      },
       {
         "key": "pollIntervalSec",
         "type": "integer",
@@ -49,13 +32,6 @@
         "max": 300,
         "step": 5,
         "defaultValue": 30
-      },
-      {
-        "key": "ctlPath",
-        "type": "path",
-        "label": "Path to the openscq30 CLI",
-        "defaultValue": "",
-        "description": "Leave empty to find `openscq30` on PATH."
       },
       {
         "key": "hideWhenDisconnected",
