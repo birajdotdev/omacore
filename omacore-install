@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Installs the OpenSCQ30 CLI (official latest release) into ~/.local, no sudo
-# needed. The panel's "Install OpenSCQ30 CLI" button opens this in a visible
-# terminal (omarchy-launch-terminal) so you can watch the download.
+# needed.
+#
+# Two ways to run it:
+#   * "Install OpenSCQ30 CLI" button in the panel -> opens this in a visible
+#     terminal (omarchy-launch-terminal) so you can watch the download.
+#   * The widget itself runs `omacore-install --silent` in the background the
+#     first time it notices the CLI is missing, so a fresh install self-heals
+#     without any interaction.
 set -euo pipefail
+
+SILENT=0
+[[ "${1:-}" == "--silent" ]] && SILENT=1
 
 OPENSCQ30_GH="Oppzippy/OpenSCQ30"
 BIN_DIR="$HOME/.local/opt/openscq30"
@@ -10,8 +19,8 @@ BIN_LINK="$HOME/.local/bin/openscq30"
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-say()  { printf '\033[1;32m==>\033[0m %s\n' "$1"; }
-info() { printf '\033[1;34m i\033[0m %s\n' "$1"; }
+say()  { (( SILENT )) || printf '\033[1;32m==>\033[0m %s\n' "$1"; }
+info() { (( SILENT )) || printf '\033[1;34m i\033[0m %s\n' "$1"; }
 die()  { printf '\033[1;31mERROR\033[0m %s\n' "$1" >&2; exit 1; }
 
 latest_release() {
@@ -26,13 +35,11 @@ latest_release() {
 if command_exists openscq30 && openscq30 list-models 2>/dev/null | grep -q "SoundcoreD1202"; then
   info "openscq30 already installed and recent: $(openscq30 --version 2>/dev/null | head -1)"
   info "Nothing to do."
-  read -rp "Press Enter to close this window." _
+  (( SILENT )) || read -rp "Press Enter to close this window." _
   exit 0
 fi
 
 command_exists curl || die "curl is required to download OpenSCQ30."
-command_exists openscq30 ||
-  say "Installing OpenSCQ30 CLI ($(latest_release || true))..."
 
 tag="$(latest_release)" || true
 [[ -n "$tag" ]] || die "Could not determine the latest OpenSCQ30 release."
@@ -43,20 +50,29 @@ case "$(uname -m)" in
   *) die "Unsupported architecture: $(uname -m) (OpenSCQ30 ships amd64/arm64 linux builds)" ;;
 esac
 asset="openscq30-cli-linux-$arch"
+url="https://$OPENSCQ30_GH/releases/download/$tag/$asset"
 
 mkdir -p "$BIN_DIR" "$HOME/.local/bin"
 say "Downloading $OPENSCQ30_GH/releases/download/$tag/$asset"
 if command_exists gh; then
   gh release download "$tag" --repo "$OPENSCQ30_GH" --pattern "$asset" --dir "$BIN_DIR"
 else
-  curl -fSL --progress-bar -o "$BIN_DIR/$asset" \
-    "https://github.com/$OPENSCQ30_GH/releases/download/$tag/$asset"
+  # --progress-bar fights a non-tty stdout (the widget's background run) with
+  # carriage-return spam; keep it only for the visible-terminal path.
+  if (( SILENT )); then
+    curl -fsSL -o "$BIN_DIR/$asset" "$url"
+  else
+    curl -fSL --progress-bar -o "$BIN_DIR/$asset" "$url"
+  fi
 fi
 chmod +x "$BIN_DIR/$asset"
 ln -sf "$BIN_DIR/$asset" "$BIN_LINK"
 info "Installed: $BIN_LINK -> $BIN_DIR/$asset"
 
-say "Next: register your earbuds, then pair them over Bluetooth."
+(( SILENT )) && exit 0
+
+echo
+echo "Next: register your earbuds, then pair them over Bluetooth."
 echo "  openscq30 paired-devices add -a <mac-address> -m <model>"
 echo "To find the MAC and model of connected buds:"
 echo "  bluetoothctl devices Connected"

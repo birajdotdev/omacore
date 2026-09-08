@@ -32,7 +32,11 @@ Panel {
 
   readonly property var cursorRows: {
     var rows = []
-    if (pods.cliMissing) { rows.push("installcli"); return rows }
+    if (pods.cliMissing) {
+      if (pods.cliInstalling) return rows
+      rows.push("installcli")
+      return rows
+    }
     if (!pods.hasEarbuds) return rows
     for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
 
@@ -74,7 +78,7 @@ Panel {
   function activateCursor() {
     var name = cursorRow
     if (name === "") return
-    if (name === "installcli") { pods.installCli(); return }
+    if (name === "installcli" && !pods.cliInstalling) { pods.installCli(); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "ncmode") ncModeDropdown.toggle()
     else if (name.indexOf("scene:") === 0) pods.setMultiSceneNoiseCanceling(name.substring(6))
@@ -172,7 +176,7 @@ Panel {
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
-        else if (key === "i" && pods.cliMissing) pods.installCli()
+        else if (key === "i" && pods.cliMissing && !pods.cliInstalling) pods.installCli()
         else if (!pods.hasEarbuds) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
@@ -223,8 +227,9 @@ Panel {
 
             Text {
               width: parent.width
-              text: "OpenSCQ30 (the program this widget talks to) is not installed.\n"
-                + "Install it now — no sudo needed, it goes into ~/.local."
+              text: pods.cliInstalling
+                ? "Installing OpenSCQ30 CLI…\nThis is automatic — the widget downloads the official build into ~/.local (no sudo needed) and picks it up when it's done."
+                : "OpenSCQ30 (the program this widget talks to) is not installed.\nInstall it now — no sudo needed, it goes into ~/.local."
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -232,6 +237,7 @@ Panel {
             }
 
             Button {
+              visible: !pods.cliInstalling
               width: parent.width
               text: "Install OpenSCQ30 CLI"
               fontSize: Style.font.bodySmall
