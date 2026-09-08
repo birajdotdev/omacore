@@ -2,6 +2,20 @@
 # Usage: omacore-set <mac-address> <settingId=value> [<settingId=value> ...]
 set -euo pipefail
 
+# Resolve whichever OpenSCQ30 binary name is on PATH (openscq30 from the
+# official release, openscq30-cli from the AUR packages).
+CTL=""
+if command -v openscq30 >/dev/null 2>&1; then
+  CTL=openscq30
+elif command -v openscq30-cli >/dev/null 2>&1; then
+  CTL=openscq30-cli
+fi
+
+if [ -z "$CTL" ]; then
+  echo "openscq30 / openscq30-cli not found on PATH; install OpenSCQ30 first." >&2
+  exit 1
+fi
+
 mac="$1"
 shift
 
@@ -10,4 +24,4 @@ for kv in "$@"; do
   args+=(--set "$kv")
 done
 
-exec openscq30 device --mac-address "$mac" setting "${args[@]}"
+exec "$CTL" device --mac-address "$mac" setting "${args[@]}"

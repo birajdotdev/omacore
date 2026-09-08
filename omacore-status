@@ -10,7 +10,23 @@
 # No user configuration required — just Bluetooth pairing + OpenSCQ30 registration.
 set -uo pipefail
 
-paired_json=$(openscq30 paired-devices list --json 2>/dev/null)
+# OpenSCQ30's binary is named differently depending on how it was installed:
+#   openscq30       — official GitHub release (what the old setup.sh symlinked)
+#   openscq30-cli   — AUR packages (openscq30-cli, openscq30-cli-bin)
+# Use whichever exists so the script works regardless of install method.
+CTL=""
+if command -v openscq30 >/dev/null 2>&1; then
+  CTL=openscq30
+elif command -v openscq30-cli >/dev/null 2>&1; then
+  CTL=openscq30-cli
+fi
+
+if [ -z "$CTL" ]; then
+  echo '{"connected":false}'
+  exit 0
+fi
+
+paired_json=$($CTL paired-devices list --json 2>/dev/null)
 [ -z "$paired_json" ] && paired_json='[]'
 
 connected_raw=$(bluetoothctl devices Connected 2>/dev/null)
@@ -37,7 +53,7 @@ if [ -z "$mac" ]; then
   exit 0
 fi
 
-schema_json=$(openscq30 device --mac-address "$mac" list-settings --json 2>/dev/null)
+schema_json=$($CTL device --mac-address "$mac" list-settings --json 2>/dev/null)
 [ -z "$schema_json" ] && schema_json='[]'
 
 filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation")]' <<<"$schema_json")
@@ -58,7 +74,7 @@ done <<<"$ids"
 
 values_json='[]'
 if [ "${#get_args[@]}" -gt 0 ]; then
-  values_json=$(openscq30 device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null)
+  values_json=$($CTL device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null)
   [ -z "$values_json" ] && values_json='[]'
 fi
 
