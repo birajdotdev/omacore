@@ -95,10 +95,10 @@ fi
 schema_json=$($OMACORE_CTL device --mac-address "$mac" list-settings --json 2>/dev/null)
 [ -z "$schema_json" ] && schema_json='[]'
 
-filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation")]' <<<"$schema_json")
+filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")]' <<<"$schema_json")
 
 ids=$(jq -r '
-  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation")
+  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")
        | .settings[] | select(.type=="select" or .type=="optionalSelect" or .type=="toggle"
                                 or .type=="equalizer" or .type=="information")
        | .settingId]
