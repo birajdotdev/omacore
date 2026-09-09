@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.birajdotdev.omacore",
   "name": "Omacore",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Biraj",
   "license": "MIT",
-  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI.",
+  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI. Installs and registers automatically.",
   "kinds": [
     "bar-widget"
   ],
