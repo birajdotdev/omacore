@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Registers a Bluetooth-paired Soundcore device with OpenSCQ30, so the widget
+# can talk to it. "Registering" writes one MAC -> model row into OpenSCQ30's own
+# database (separate from BlueZ pairing); the model comes from
+# `openscq30 list-models` — the CLI refuses to connect to a device it doesn't
+# recognize, which is exactly the failure this script fixes.
+#
+# Two ways to run it:
+#   * omacore-register --mac AA:BB:CC:DD:EE:FF --model SoundcoreD1202C [--silent]
+#       The widget runs this (with --silent) the first time it notices a device
+#       connected but unregistered and can identify its model uniquely; the
+#       panel's Register button uses it too.
+#   * omacore-register
+#       Interactive terminal path (omarchy-launch-terminal): lists the models,
+#       asks for the device MAC, registers, and holds the window open.
+set -euo pipefail
+
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
+
+SILENT=0
+MAC=""
+MODEL=""
+
+usage() { echo "usage: omacore-register [--mac AA:BB:CC:DD:EE:FF --model SoundcoreXXXX] [--silent]" >&2; exit 1; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mac) MAC="${2:-}"; shift 2 ;;
+    --model) MODEL="${2:-}"; shift 2 ;;
+    --silent) SILENT=1; shift ;;
+    *) usage ;;
+  esac
+done
+
+if [ -z "$OMACORE_CTL" ]; then
+  echo "openscq30 / openscq30-cli not found on PATH; install OpenSCQ30 first." >&2
+  exit 1
+fi
+
+say()  { (( SILENT )) || printf '\033[1;32m==>\033[0m %s\n' "$1"; }
+info() { (( SILENT )) || printf '\033[1;34m i\033[0m %s\n' "$1"; }
+die()  { printf '\033[1;31mERROR\033[0m %s\n' "$1" >&2; exit 1; }
+
+register() {
+  if "$OMACORE_CTL" paired-devices add --mac-address "$1" --model "$2" >/dev/null 2>&1; then
+    say "Registered $1 as $2"
+    return 0
+  fi
+  die "OpenSCQ30 rejected registering $1 as $2. Is the model id from \`openscq30 list-models\`? (If the device is already registered, use \`openscq30 paired-devices remove\` first.)"
+}
+
+# Explicit path: both arguments given.
+if [ -n "$MAC" ]; then
+  [ -n "$MODEL" ] || usage
+  register "$MAC" "$MODEL"
+  exit 0
+fi
+[ -z "$MODEL" ] || usage
+
+# Interactive terminal path: nothing but the script given.
+command -v jq >/dev/null 2>&1 || die "jq is required for the interactive mode."
+
+echo "Registering a device with OpenSCQ30."
+echo "Pick the model from the list below (this is the same list \`openscq30 list-models\` prints):"
+echo
+
+models=$("$OMACORE_CTL" list-models)
+
+model=""
+while [ -z "$model" ]; do
+  echo "$models" | nl -w2 -s') '
+  printf '%s' "Pick a number (or q to quit): "
+  IFS= read -r choice
+  [ "${choice,,}" = "q" ] && { echo "Nothing registered."; exit 0; }
+  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+    echo "Pick a number from the list." >&2; echo; continue
+  fi
+  model=$(echo "$models" | sed -n "${choice}p" | awk '{print $1}')
+  case "$model" in
+    Soundcore*) ;;
+    *) echo "That wasn't a model number — try again." >&2; echo; model="" ;;
+  esac
+done
+
+mac=""
+while ! echo "$mac" | grep -Eq '^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$'; do
+  printf '%s' "Bluetooth MAC of the device (from \`bluetoothctl devices\`): "
+  IFS= read -r mac
+  [ -z "$mac" ] && { echo "Nothing registered."; exit 0; }
+done
+
+echo
+register "${mac,,}" "$model"
+echo
+echo "Done. The widget finds this device automatically the next time it is connected."
+read -rp "Press Enter to close this window." _

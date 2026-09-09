@@ -35,9 +35,15 @@ the widget **installs it for you**: its first poll downloads the official
 OpenSCQ30 release into `~/.local/bin` (no sudo needed, nothing touches your
 system directories) and notifies you when it's done. If background
 auto-install ever failed, the panel keeps an **Install OpenSCQ30 CLI** button
-(or press `i`) that runs the same installer visibly in a terminal. You still
-have to register the device with OpenSCQ30 (see **Setup**) — only the CLI
-install itself is automatic.
+(or press `i`) that runs the same installer visibly in a terminal.
+
+OpenSCQ30 also needs your earbuds registered with it (a MAC → model row in
+its own database, separate from Bluetooth pairing — see **Setup**). When the
+widget detects the buds paired over Bluetooth but not registered yet, the bar
+icon again shows in the alert color and, if the device's name uniquely
+identifies a model in `openscq30 list-models`, the widget **registers it
+automatically** and notifies you. An ambiguous name leaves a model dropdown +
+**Register this device** button in the panel instead.
 
 ## What it shows
 
@@ -130,7 +136,16 @@ model, separate from BlueZ's pairing):
 1. Install `openscq30` (above, picking whichever path gets you a build new
    enough for your model) and pair your earbuds over Bluetooth as usual.
 
-2. Register the device with OpenSCQ30:
+2. Register the device with OpenSCQ30. Most of the time you don't need to do
+   this by hand at all: once the buds are paired over Bluetooth and connected,
+   the widget notices they're not registered and — because the device's name
+   usually matches exactly one model in `openscq30 list-models` (e.g. the R60i
+   NC shows up as "soundcore R60i NC") — **registers them itself** and tells
+   you what it did. If the name is ambiguous, open the widget's panel: it
+   shows a model dropdown preselected to nothing plus a **Register this
+   device** button.
+
+   The equivalent manual command is:
 
    ```bash
    openscq30 paired-devices add -a AA:BB:CC:DD:EE:FF -m SoundcoreD1202C
@@ -142,8 +157,8 @@ model, separate from BlueZ's pairing):
    changed between OpenSCQ30 versions, so trust `list-models` over any id
    written down here.
 
-Once the device is paired and now `openscq30 paired-devices add`-registered,
-the widget finds it automatically whenever it's connected over Bluetooth.
+Once the device is paired and `openscq30 paired-devices add`-registered, the
+widget finds it automatically whenever it's connected over Bluetooth.
 
 ## Update / Remove
 
@@ -186,7 +201,7 @@ Left click opens the panel.
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Poll interval (seconds) | 30 | How often the widget re-runs `omacore-status`. |
-| Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is a missing `openscq30` CLI rather than unreachable earbuds, so the install button stays reachable. |
+| Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is fixable — a missing `openscq30` CLI, or a device connected but not yet registered with OpenSCQ30 — so the install/register controls stay reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 
 ## Credits

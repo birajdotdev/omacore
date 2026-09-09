@@ -41,6 +41,17 @@ Item {
   // panel then offers an in-widget install button instead of hiding silently.
   property bool cliMissing: false
 
+  // True when something is connected over Bluetooth but not registered with
+  // OpenSCQ30 yet (its MAC has no model row in `paired-devices list`).
+  property bool registeredMissing: false
+  property string unregisteredMac: ""
+  property string unregisteredName: ""
+  // When the connected device's name uniquely identifies one supported model,
+  // omacore-status sends it here so the widget can register it automatically.
+  property string suggestedModel: ""
+  property var registerModels: []
+  property bool registering: false
+
   // Populated by the discovery script — the friendly Bluetooth device name
   // (e.g. "Soundcore R60i NC"), used for the panel hero title.
   property string deviceName: "Soundcore"
@@ -72,6 +83,7 @@ Item {
   readonly property string statusScript: pluginDir + "/omacore-status"
   readonly property string setScript: pluginDir + "/omacore-set"
   readonly property string installScript: pluginDir + "/omacore-install"
+  readonly property string registerScript: pluginDir + "/omacore-register"
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -124,20 +136,66 @@ Item {
     installProcess.running = true
   }
 
+  // Auto-heal for registration: a connected device whose model is unambiguous
+  // gets registered the moment omacore-status first reports it. If the add
+  // fails (or the model was ambiguous), the panel keeps a dropdown + button so
+  // the user can pick it; retries are staggered to avoid hammering on a
+  // persistent failure.
+  readonly property int registerRetryMs: 10 * 60 * 1000
+  property var _registerFailedAt: 0
+
+  function _startAutoRegister() {
+    if (registering || registerProcess.running) return
+    if (unregisteredMac === "" || suggestedModel === "") return
+    if (_registerFailedAt !== 0 && Date.now() - _registerFailedAt < registerRetryMs) return
+    _registerFailedAt = 0
+    registering = true
+    _notify("Registering " + unregisteredName, "OpenSCQ30 needs a model for this device — auto-detected " + suggestedModel + " and registering it now.", "normal")
+    registerProcess.command = [registerScript, "--mac", unregisteredMac, "--model", suggestedModel, "--silent"]
+    registerProcess.running = true
+  }
+
+  // Manual path: the panel's dropdown picks a model (used when the device name
+  // doesn't uniquely identify one, or after an auto-register failed).
+  function registerDevice(model) {
+    if (registering || registerProcess.running || unregisteredMac === "" || !model) return
+    registering = true
+    registerProcess.command = [registerScript, "--mac", unregisteredMac, "--model", model, "--silent"]
+    registerProcess.running = true
+  }
+
   function applyStatus(raw) {
     var parsed = Model.parseStatus(raw)
     if (!parsed.connected) {
       var missing = parsed.cliMissing === true
       if (missing !== cliMissing) cliMissing = missing
+      var needReg = parsed.registeredMissing === true
+      if (needReg !== registeredMissing) registeredMissing = needReg
       if (connected) _noteDisconnected("No paired Soundcore device is connected.")
       else if (missing) {
+        registeredMissing = false
         lastError = "openscq30 / openscq30-cli not found on PATH."
         _startCliInstall()
+      } else if (needReg) {
+        unregisteredMac = parsed.unregisteredMac || ""
+        unregisteredName = parsed.unregisteredName || ""
+        suggestedModel = parsed.suggestedModel || ""
+        registerModels = parsed.models || []
+        lastError = "Connected over Bluetooth but not registered with OpenSCQ30 yet."
+        _startAutoRegister()
+      } else {
+        registeredMissing = false
+        unregisteredMac = ""
+        unregisteredName = ""
+        suggestedModel = ""
+        registerModels = []
       }
       return
     }
 
     cliMissing = false
+    registeredMissing = false
+    registering = false
 
     discoveredMac = parsed.mac || ""
     deviceName = parsed.name || "Soundcore"
@@ -402,6 +460,25 @@ Item {
         pendingSettleTimer.stop()
         root.actionStatus = Model.elideError(actionErr.text) || "openscq30 rejected the command"
         actionStatusTimer.restart()
+      }
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: registerProcess
+    running: false
+    command: []
+    stderr: StdioCollector { id: registerErr; waitForEnd: true }
+    onExited: function (exitCode) {
+      if (root.registering) {
+        root.registering = false
+        if (exitCode === 0) {
+          root._notify("Device registered", root.unregisteredName + " is now registered with OpenSCQ30 — this widget will connect to it on the next poll.", "normal")
+        } else {
+          root._registerFailedAt = Date.now()
+          root._notify("Registration failed", Model.elideError(registerErr.text) || "Try picking a different model in the panel, or add the device manually.", "normal")
+        }
       }
       root.refresh()
     }

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Shared setup for the omacore plugin's shell scripts. Not meant to be run
+# directly — source it from each tool script (they all live in the plugin dir,
+# so BASH_SOURCE is reliable there even when invoked through a symlink/PATH):
+#
+#   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
+#
+# Provides OMACORE_CTL: the OpenSCQ30 binary name on PATH, whichever it is:
+#   * openscq30     — official GitHub release (what omacore-install symlinks)
+#   * openscq30-cli — AUR packages (openscq30-cli, openscq30-cli-bin)
+# Empty when neither is installed.
+
+OMACORE_CTL=""
+if command -v openscq30 >/dev/null 2>&1; then
+  OMACORE_CTL=openscq30
+elif command -v openscq30-cli >/dev/null 2>&1; then
+  OMACORE_CTL=openscq30-cli
+fi

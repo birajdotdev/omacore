@@ -20,12 +20,13 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
-  // Missing CLI is worth showing as an alert in the bar even when the buds are
-  // (as a result) unreachable — a broken install should be loud, not invisible.
-  readonly property color barIconColor: pods.cliMissing ? urgent
+  // A missing CLI or an unregistered-but-connected device are both worth
+  // showing as an alert in the bar even when the buds are (as a result)
+  // unreachable — a broken setup should be loud, not invisible.
+  readonly property color barIconColor: (pods.cliMissing || pods.registeredMissing) ? urgent
     : (pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55))
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== "" && !pods.cliMissing
+  readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
   readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
   readonly property bool transparencySectionVisible: pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported
   readonly property var ncModeOptions: Model.NC_SUBMODES.map(function (m) { return { value: m, label: Model.ncSubModeLabel(m) } })
@@ -35,6 +36,11 @@ Panel {
     if (pods.cliMissing) {
       if (pods.cliInstalling) return rows
       rows.push("installcli")
+      return rows
+    }
+    if (pods.registeredMissing) {
+      if (pods.registering) return rows
+      rows.push("registerdev")
       return rows
     }
     if (!pods.hasEarbuds) return rows
@@ -79,6 +85,7 @@ Panel {
     var name = cursorRow
     if (name === "") return
     if (name === "installcli" && !pods.cliInstalling) { pods.installCli(); return }
+    if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "ncmode") ncModeDropdown.toggle()
     else if (name.indexOf("scene:") === 0) pods.setMultiSceneNoiseCanceling(name.substring(6))
@@ -96,7 +103,7 @@ Panel {
     cursorIndex = at
   }
 
-  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing
+  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -161,7 +168,7 @@ Panel {
       // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
       // handling) — without this our own Keys.priority: BeforeItem would
       // swallow them first and the popup's list would never scroll or close.
-      blocked: ncModeDropdown.popupOpen
+      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         if (root.cursorRow === "manuallevel" && dx !== 0) {
@@ -203,7 +210,7 @@ Panel {
           PanelHero {
             id: hero
             width: parent.width
-            title: pods.cliMissing ? "OpenSCQ30 not found" : (pods.hasEarbuds ? pods.deviceName : "Soundcore")
+            title: pods.cliMissing ? "OpenSCQ30 not found" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
               ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
                   ? " · " + Model.ncSubModeLabel(pods.noiseCancelingMode) : "")
@@ -249,6 +256,68 @@ Panel {
               hasCursor: root.rowHasCursor("installcli")
               onClicked: pods.installCli()
               onHovered: function (h) { if (h) root.focusRow("installcli") }
+            }
+          }
+
+          Column {
+            visible: root.opened && pods.registeredMissing && !pods.cliMissing
+            width: parent.width
+            spacing: Style.space(6)
+
+            Text {
+              width: parent.width
+              text: pods.unregisteredName + " is paired over Bluetooth, but nothing is registered with OpenSCQ30 yet — the model id in its database also tells this widget which device it is."
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              visible: pods.suggestedModel !== ""
+              width: parent.width
+              text: "Matches the model “" + pods.suggestedModel + "” — registering it automatically."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Dropdown {
+              id: registerModelDropdown
+              width: parent.width
+              showLabel: false
+              value: pods.suggestedModel
+              options: Model.modelOptions(pods.registerModels)
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              hasCursor: root.rowHasCursor("registerdev")
+              onHovered: function (h) { if (h) root.focusRow("registerdev") }
+            }
+
+            Text {
+              visible: pods.registering
+              width: parent.width
+              text: "Registering " + pods.suggestedModel + "…\nThe widget adds the MAC → model entry to OpenSCQ30’s own database; pairing and Bluetooth are untouched."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Button {
+              visible: !pods.registering
+              width: parent.width
+              text: "Register this device"
+              fontSize: Style.font.bodySmall
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              horizontalPadding: Style.spacing.controlPaddingX
+              verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+              bordered: true
+              hasCursor: root.rowHasCursor("registerdev")
+              onClicked: pods.registerDevice(registerModelDropdown.value)
+              onHovered: function (h) { if (h) root.focusRow("registerdev") }
             }
           }
 

@@ -10,6 +10,8 @@
 #     without any interaction.
 set -euo pipefail
 
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
+
 SILENT=0
 [[ "${1:-}" == "--silent" ]] && SILENT=1
 
@@ -32,8 +34,8 @@ latest_release() {
   fi
 }
 
-if command_exists openscq30 && openscq30 list-models 2>/dev/null | grep -q "SoundcoreD1202"; then
-  info "openscq30 already installed and recent: $(openscq30 --version 2>/dev/null | head -1)"
+if [ -n "$OMACORE_CTL" ] && "$OMACORE_CTL" list-models 2>/dev/null | grep -q "SoundcoreD1202"; then
+  info "openscq30 already installed and recent: $("$OMACORE_CTL" --version 2>/dev/null | head -1)"
   info "Nothing to do."
   (( SILENT )) || read -rp "Press Enter to close this window." _
   exit 0

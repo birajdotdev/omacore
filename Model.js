@@ -140,6 +140,14 @@ function has(map, id) {
   return Object.prototype.hasOwnProperty.call(map, id)
 }
 
+// Options for the panel's "register this device" model dropdown, fed by the
+// `models` array omacore-status includes with the registeredMissing status.
+function modelOptions(models) {
+  return (models || []).map(function (m) {
+    return { value: m.model, label: m.name + " (" + m.model + ")" }
+  })
+}
+
 // Parse the JSON output from omacore-status.
 // Returns { connected, mac, name, model, schema, values } or
 // { connected: false } if nothing is connected.
