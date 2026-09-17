@@ -84,7 +84,7 @@ Panel {
   function activateCursor() {
     var name = cursorRow
     if (name === "") return
-    if (name === "installcli" && !pods.cliInstalling) { pods.installCli(); return }
+    if (name === "installcli" && !pods.cliInstalling) { launchInstaller(); return }
     if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "ncmode") ncModeDropdown.toggle()
@@ -101,6 +101,11 @@ Panel {
     if (at < 0) return
     cursorActive = true
     cursorIndex = at
+  }
+
+  function launchInstaller() {
+    root.close()
+    pods.installCli()
   }
 
   visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing
@@ -183,7 +188,7 @@ Panel {
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
-        else if (key === "i" && pods.cliMissing && !pods.cliInstalling) pods.installCli()
+        else if (key === "i" && pods.cliMissing && !pods.cliInstalling) launchInstaller()
         else if (!pods.hasEarbuds) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
@@ -261,7 +266,7 @@ Panel {
               verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
               bordered: true
               hasCursor: root.rowHasCursor("installcli")
-              onClicked: pods.installCli()
+              onClicked: launchInstaller()
               onHovered: function (h) { if (h) root.focusRow("installcli") }
             }
           }
