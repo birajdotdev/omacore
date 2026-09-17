@@ -140,13 +140,10 @@ Panel {
     bar: root.bar
     iconComponent: Component {
       Item {
-        Image {
+        SoundcoreIcon {
           anchors.centerIn: parent
-          width: Style.space(14)
-          height: Style.space(14)
-          source: Qt.resolvedUrl("soundcore-logo.svg")
-          fillMode: Image.PreserveAspectFit
-          opacity: pods.cliMissing || pods.registeredMissing ? 0.72 : 1.0
+          iconSize: Style.space(12)
+          color: root.barIconColor
         }
       }
     }
@@ -229,11 +226,9 @@ Panel {
             fontFamily: root.fontFamily
             iconOpacity: pods.hasEarbuds ? 1.0 : 0.5
             iconComponent: Component {
-              Image {
-                width: Style.font.display
-                height: Style.font.display
-                source: Qt.resolvedUrl("soundcore-logo.svg")
-                fillMode: Image.PreserveAspectFit
+              SoundcoreIcon {
+                iconSize: Style.font.display
+                color: pods.hasEarbuds ? root.foreground : root.dim
               }
             }
           }
