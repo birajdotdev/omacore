@@ -114,7 +114,6 @@ Item {
   // poll picks the CLI up once it lands on PATH, so no manual refresh needed.
   function installCli() {
     if (installProcess.running) return
-    cliInstalling = true
     installProcess.command = ["omarchy-launch-terminal", installScript]
     installProcess.running = true
   }
