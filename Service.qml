@@ -85,7 +85,7 @@ Item {
   readonly property string setScript: pluginDir + "/omacore-set"
   readonly property string installScript: pluginDir + "/omacore-install"
   readonly property string registerScript: pluginDir + "/omacore-register"
-  readonly property string notificationIcon: pluginDir + "/omacore-buds.svg"
+  readonly property string notificationIcon: pluginDir + "/omacore-soundcore.svg"
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
