@@ -38,7 +38,7 @@ Item {
   property string actionStatus: ""
 
   // True when omacore-status couldn't find the OpenSCQ30 CLI on PATH. The
-  // panel then offers an in-widget install button instead of hiding silently.
+  // panel then offers an explicit install action instead of hiding silently.
   property bool cliMissing: false
 
   // True when something is connected over Bluetooth but not registered with
@@ -157,7 +157,7 @@ Item {
       if (connected) _noteDisconnected("No paired Soundcore device is connected.")
       else if (missing) {
         registeredMissing = false
-        lastError = "openscq30 / openscq30-cli not found on PATH."
+        lastError = "OpenSCQ30 CLI is not installed."
       } else if (needReg) {
         unregisteredMac = parsed.unregisteredMac || ""
         unregisteredName = parsed.unregisteredName || ""

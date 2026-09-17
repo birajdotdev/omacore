@@ -210,10 +210,11 @@ Panel {
           PanelHero {
             id: hero
             width: parent.width
-            title: pods.cliMissing ? "OpenSCQ30 not found" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
+            title: pods.cliMissing ? "OpenSCQ30 CLI required" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
               ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
                   ? " · " + Model.ncSubModeLabel(pods.noiseCancelingMode) : "")
+              : pods.cliMissing ? "One-time setup for Omacore"
               : pods.lastError !== "" ? pods.lastError
               : "Checking…"
             foreground: root.foreground
@@ -230,23 +231,29 @@ Panel {
           Column {
             visible: root.opened && pods.cliMissing
             width: parent.width
-            spacing: Style.space(6)
+            spacing: Style.space(8)
 
             Text {
               width: parent.width
-              text: pods.cliInstalling
-                ? "Installing OpenSCQ30 CLI…\nConfirm the pinned official release in the terminal to continue."
-                : "OpenSCQ30 (the program this widget talks to) is not installed.\nInstall the pinned official release into ~/.local?"
+              text: "Omacore uses OpenSCQ30 to read and control your Soundcore earbuds. The CLI is not installed on this system."
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               wrapMode: Text.WordWrap
             }
 
-            Button {
-              visible: !pods.cliInstalling
+            Text {
               width: parent.width
-              text: "Install OpenSCQ30 CLI"
+              text: "Install the pinned, hash-verified release in a floating terminal. It stays in your home directory and requires your confirmation before downloading."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Button {
+              width: parent.width
+              text: "Install OpenSCQ30 (opens terminal)"
               fontSize: Style.font.bodySmall
               foreground: root.foreground
               fontFamily: root.fontFamily
