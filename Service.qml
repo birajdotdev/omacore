@@ -40,6 +40,7 @@ Item {
   // True when omacore-status couldn't find the OpenSCQ30 CLI on PATH. The
   // panel then offers an explicit install action instead of hiding silently.
   property bool cliMissing: false
+  property bool dependencyNoticeShown: false
 
   // True when something is connected over Bluetooth but not registered with
   // OpenSCQ30 yet (its MAC has no model row in `paired-devices list`).
@@ -117,6 +118,18 @@ Item {
     installProcess.running = true
   }
 
+  function notifyDependencyMissing() {
+    if (dependencyNoticeShown) return
+    dependencyNoticeShown = true
+    _notifyQueue.push({
+      headline: "Omacore needs OpenSCQ30",
+      description: "Open the installer to add the Soundcore control CLI.",
+      urgency: "normal",
+      exec: ["omarchy-launch-floating-terminal-with-presentation", installScript]
+    })
+    _pumpNotifyQueue()
+  }
+
   property bool cliInstalling: false
 
   // Auto-heal for registration: a connected device whose model is unambiguous
@@ -151,6 +164,7 @@ Item {
     var parsed = Model.parseStatus(raw)
     if (!parsed.connected) {
       var missing = parsed.cliMissing === true
+      if (missing && !cliMissing) notifyDependencyMissing()
       if (missing !== cliMissing) cliMissing = missing
       var needReg = parsed.registeredMissing === true
       if (needReg !== registeredMissing) registeredMissing = needReg
@@ -259,7 +273,8 @@ Item {
   function _pumpNotifyQueue() {
     if (notifyProcess.running || _notifyQueue.length === 0) return
     var next = _notifyQueue.shift()
-    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Soundcore", "-u", next.urgency, next.headline, next.description]
+    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Omacore", "-u", next.urgency, next.headline, next.description]
+    if (next.exec) notifyProcess.command = notifyProcess.command.concat(["--exec"].concat(next.exec))
     notifyProcess.running = true
   }
 
