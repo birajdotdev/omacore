@@ -31,11 +31,10 @@ That's it. The widget auto-detects whichever Soundcore device is currently
 connected over Bluetooth — no MAC address to configure.
 
 If `openscq30` isn't on `PATH` yet, the bar icon shows in the alert color and
-the widget **installs it for you**: its first poll downloads the official
-OpenSCQ30 release into `~/.local/bin` (no sudo needed, nothing touches your
-system directories) and notifies you when it's done. If background
-auto-install ever failed, the panel keeps an **Install OpenSCQ30 CLI** button
-(or press `i`) that runs the same installer visibly in a terminal.
+the panel offers an **Install OpenSCQ30 CLI** button (or press `i`). Installation
+is never automatic: the button opens a floating terminal with clickable **Yes**
+and **No** actions before downloading the pinned official OpenSCQ30 release
+into `~/.local`.
 
 OpenSCQ30 also needs your earbuds registered with it (a MAC → model row in
 its own database, separate from Bluetooth pairing — see **Setup**). When the
@@ -98,13 +97,12 @@ discovery is automatic on every poll.
   affiliated with this plugin's author — it just happens to be the CLI this
   widget shells out to.
 
-  If it's missing, the widget downloads it automatically (see **Install**):
-  the `omacore-install` script fetches the latest official GitHub release of
-  **Oppzippy/OpenSCQ30** over HTTPS and installs it into `~/.local` with no
-  sudo. That means installing this plugin auto-downloads and runs a
-  third-party binary — a deliberate trust decision. Review
-  `omacore-install` before relying on it; to opt out, install `openscq30`
-  yourself first (then there's nothing for the widget to auto-install).
+  If it's missing, use the explicit install action described above. The
+  `omacore-install` script downloads **Oppzippy/OpenSCQ30 v2.12.0** from its
+  immutable release URL, enforces a 50 MiB download limit, verifies the
+  architecture-specific SHA-256 digest, and only then installs the executable
+  into `~/.local`. Review `omacore-install` before accepting the Yes action; to
+  opt out, choose No or install `openscq30` yourself first.
 
   **Version matters for newer devices.** R60i NC / P31i support landed in
   OpenSCQ30 v2.10.0. The `openscq30-cli-bin` AUR package may lag behind

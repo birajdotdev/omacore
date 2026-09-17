@@ -84,7 +84,7 @@ Panel {
   function activateCursor() {
     var name = cursorRow
     if (name === "") return
-    if (name === "installcli" && !pods.cliInstalling) { pods.installCli(); return }
+    if (name === "installcli" && !pods.cliInstalling) { launchInstaller(); return }
     if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "ncmode") ncModeDropdown.toggle()
@@ -101,6 +101,11 @@ Panel {
     if (at < 0) return
     cursorActive = true
     cursorIndex = at
+  }
+
+  function launchInstaller() {
+    root.close()
+    pods.installCli()
   }
 
   visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing
@@ -183,7 +188,7 @@ Panel {
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
-        else if (key === "i" && pods.cliMissing && !pods.cliInstalling) pods.installCli()
+        else if (key === "i" && pods.cliMissing && !pods.cliInstalling) launchInstaller()
         else if (!pods.hasEarbuds) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
@@ -210,10 +215,11 @@ Panel {
           PanelHero {
             id: hero
             width: parent.width
-            title: pods.cliMissing ? "OpenSCQ30 not found" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
+            title: pods.cliMissing ? "OpenSCQ30 CLI required" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
               ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
                   ? " · " + Model.ncSubModeLabel(pods.noiseCancelingMode) : "")
+              : pods.cliMissing ? "One-time setup for Omacore"
               : pods.lastError !== "" ? pods.lastError
               : "Checking…"
             foreground: root.foreground
@@ -230,23 +236,29 @@ Panel {
           Column {
             visible: root.opened && pods.cliMissing
             width: parent.width
-            spacing: Style.space(6)
+            spacing: Style.space(8)
 
             Text {
               width: parent.width
-              text: pods.cliInstalling
-                ? "Installing OpenSCQ30 CLI…\nThis is automatic — the widget downloads the official build into ~/.local (no sudo needed) and picks it up when it's done."
-                : "OpenSCQ30 (the program this widget talks to) is not installed.\nInstall it now — no sudo needed, it goes into ~/.local."
+              text: "Omacore uses OpenSCQ30 to read and control your Soundcore earbuds. The CLI is not installed on this system."
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               wrapMode: Text.WordWrap
             }
 
-            Button {
-              visible: !pods.cliInstalling
+            Text {
               width: parent.width
-              text: "Install OpenSCQ30 CLI"
+              text: "Install the pinned, hash-verified release in a floating terminal. It stays in your home directory and requires your confirmation before downloading."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Button {
+              width: parent.width
+              text: "Install OpenSCQ30 (opens terminal)"
               fontSize: Style.font.bodySmall
               foreground: root.foreground
               fontFamily: root.fontFamily
@@ -254,7 +266,7 @@ Panel {
               verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
               bordered: true
               hasCursor: root.rowHasCursor("installcli")
-              onClicked: pods.installCli()
+              onClicked: launchInstaller()
               onHovered: function (h) { if (h) root.focusRow("installcli") }
             }
           }
@@ -383,6 +395,7 @@ Panel {
                   onActivated: pods.setAncMode(modelData)
                 }
               }
+
             }
           }
 
@@ -594,6 +607,7 @@ Panel {
           }
         }
       }
+
     }
   }
 

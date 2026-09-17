@@ -5,7 +5,7 @@
   "version": "0.3.0",
   "author": "Biraj",
   "license": "MIT",
-  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI. Installs and registers automatically.",
+  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI. Installs with explicit confirmation.",
   "kinds": [
     "bar-widget"
   ],

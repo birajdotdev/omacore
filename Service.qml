@@ -38,8 +38,9 @@ Item {
   property string actionStatus: ""
 
   // True when omacore-status couldn't find the OpenSCQ30 CLI on PATH. The
-  // panel then offers an in-widget install button instead of hiding silently.
+  // panel then offers an explicit install action instead of hiding silently.
   property bool cliMissing: false
+  property bool dependencyNoticeShown: false
 
   // True when something is connected over Bluetooth but not registered with
   // OpenSCQ30 yet (its MAC has no model row in `paired-devices list`).
@@ -84,6 +85,7 @@ Item {
   readonly property string setScript: pluginDir + "/omacore-set"
   readonly property string installScript: pluginDir + "/omacore-install"
   readonly property string registerScript: pluginDir + "/omacore-register"
+  readonly property string notificationIcon: pluginDir + "/soundcore-logo.svg"
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -109,32 +111,28 @@ Item {
     pollWatchdog.restart()
   }
 
-  // Opens the bundled omacore-install in a visible terminal so the user can
-  // watch the download; no sudo needed (installs into ~/.local). The regular
-  // poll picks the CLI up once it lands on PATH, so no manual refresh needed.
+  // Opens the bundled installer in Omarchy's centered floating terminal so
+  // the user can review the confirmation and watch the download.
   function installCli() {
     if (installProcess.running) return
-    installProcess.command = ["omarchy-launch-terminal", installScript]
+    installProcess.command = ["omarchy-launch-floating-terminal-with-presentation", installScript]
     installProcess.running = true
   }
 
-  // Auto-heal: the first poll that finds the CLI missing kicks off a silent
-  // background install. No sudo needed (goes into ~/.local), so the widget can
-  // just do it. `--silent` keeps the download quiet; a popup-less notification
-  // tells the user what happened and the next poll picks the CLI up.
-  readonly property int installRetryMs: 10 * 60 * 1000
-  property var _installFailedAt: 0
+  function notifyDependencyMissing() {
+    if (dependencyNoticeShown) return
+    dependencyNoticeShown = true
+    _notifyQueue.push({
+      headline: "Set up Omacore for Soundcore earbuds",
+      description: "OpenSCQ30 is missing. Click to review the pinned, hash-verified CLI installation. Nothing downloads until you confirm.",
+      urgency: "normal",
+      icon: notificationIcon,
+      exec: ["omarchy-launch-floating-terminal-with-presentation", installScript]
+    })
+    _pumpNotifyQueue()
+  }
+
   property bool cliInstalling: false
-
-  function _startCliInstall() {
-    if (cliInstalling || installProcess.running) return
-    if (_installFailedAt !== 0 && Date.now() - _installFailedAt < installRetryMs) return
-    _installFailedAt = 0
-    cliInstalling = true
-    _notify("Installing OpenSCQ30 CLI", "This widget needs openscq30 to read your Soundcore earbuds. Downloading the official build into ~/.local — no sudo needed.", "normal")
-    installProcess.command = [installScript, "--silent"]
-    installProcess.running = true
-  }
 
   // Auto-heal for registration: a connected device whose model is unambiguous
   // gets registered the moment omacore-status first reports it. If the add
@@ -168,14 +166,14 @@ Item {
     var parsed = Model.parseStatus(raw)
     if (!parsed.connected) {
       var missing = parsed.cliMissing === true
+      if (missing && !cliMissing) notifyDependencyMissing()
       if (missing !== cliMissing) cliMissing = missing
       var needReg = parsed.registeredMissing === true
       if (needReg !== registeredMissing) registeredMissing = needReg
       if (connected) _noteDisconnected("No paired Soundcore device is connected.")
       else if (missing) {
         registeredMissing = false
-        lastError = "openscq30 / openscq30-cli not found on PATH."
-        _startCliInstall()
+        lastError = "OpenSCQ30 CLI is not installed."
       } else if (needReg) {
         unregisteredMac = parsed.unregisteredMac || ""
         unregisteredName = parsed.unregisteredName || ""
@@ -277,7 +275,8 @@ Item {
   function _pumpNotifyQueue() {
     if (notifyProcess.running || _notifyQueue.length === 0) return
     var next = _notifyQueue.shift()
-    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Soundcore", "-u", next.urgency, next.headline, next.description]
+    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Omacore", "-i", next.icon || notificationIcon, "-u", next.urgency, next.headline, next.description]
+    if (next.exec) notifyProcess.command = notifyProcess.command.concat(["--exec"].concat(next.exec))
     notifyProcess.running = true
   }
 
@@ -495,7 +494,6 @@ Item {
         if (exitCode === 0) {
           root._notify("OpenSCQ30 installed", "The OpenSCQ30 CLI is ready — this widget will find it automatically.", "normal")
         } else {
-          root._installFailedAt = Date.now()
           root._notify("OpenSCQ30 install failed", Model.elideError(installErr.text) || "Try the panel's Install button to run it in a terminal.", "normal")
         }
       }
