@@ -125,7 +125,7 @@ Item {
       headline: "Set up Omacore for Soundcore earbuds",
       description: "OpenSCQ30 is missing. Click to review the pinned, hash-verified CLI installation. Nothing downloads until you confirm.",
       urgency: "normal",
-      glyph: "",
+      glyph: "󰋋",
       exec: ["omarchy-launch-floating-terminal-with-presentation", installScript]
     })
     _pumpNotifyQueue()
@@ -274,7 +274,7 @@ Item {
   function _pumpNotifyQueue() {
     if (notifyProcess.running || _notifyQueue.length === 0) return
     var next = _notifyQueue.shift()
-    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Omacore", "-g", next.glyph || "", "-u", next.urgency, next.headline, next.description]
+    notifyProcess.command = ["omarchy-notification-send", "--app-name", "Omacore", "-g", next.glyph || "󰋋", "-u", next.urgency, next.headline, next.description]
     if (next.exec) notifyProcess.command = notifyProcess.command.concat(["--exec"].concat(next.exec))
     notifyProcess.running = true
   }
