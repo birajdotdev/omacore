@@ -100,7 +100,8 @@ filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="e
 ids=$(jq -r '
   [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")
        | .settings[] | select(.type=="select" or .type=="optionalSelect" or .type=="toggle"
-                                or .type=="equalizer" or .type=="information")
+                                or .type=="equalizer" or .type=="information"
+                                or .type=="i32Range")
        | .settingId]
   | unique | .[]
 ' <<<"$schema_json" 2>/dev/null)
