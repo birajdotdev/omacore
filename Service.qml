@@ -122,8 +122,8 @@ Item {
     if (dependencyNoticeShown) return
     dependencyNoticeShown = true
     _notifyQueue.push({
-      headline: "Omacore needs OpenSCQ30",
-      description: "Open the installer to add the Soundcore control CLI.",
+      headline: "Set up Omacore for Soundcore earbuds",
+      description: "OpenSCQ30 is missing. Click to review the pinned, hash-verified CLI installation. Nothing downloads until you confirm.",
       urgency: "normal",
       glyph: "",
       exec: ["omarchy-launch-floating-terminal-with-presentation", installScript]
