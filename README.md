@@ -32,8 +32,9 @@ connected over Bluetooth — no MAC address to configure.
 
 If `openscq30` isn't on `PATH` yet, the bar icon shows in the alert color and
 the panel offers an **Install OpenSCQ30 CLI** button (or press `i`). Installation
-is never automatic: the button opens a visible terminal and asks for confirmation
-before downloading the pinned official OpenSCQ30 release into `~/.local`.
+is never automatic: the button opens a floating terminal with clickable **Yes**
+and **No** actions before downloading the pinned official OpenSCQ30 release
+into `~/.local`.
 
 OpenSCQ30 also needs your earbuds registered with it (a MAC → model row in
 its own database, separate from Bluetooth pairing — see **Setup**). When the
@@ -100,8 +101,8 @@ discovery is automatic on every poll.
   `omacore-install` script downloads **Oppzippy/OpenSCQ30 v2.12.0** from its
   immutable release URL, enforces a 50 MiB download limit, verifies the
   architecture-specific SHA-256 digest, and only then installs the executable
-  into `~/.local`. Review `omacore-install` before accepting the download; to
-  opt out, install `openscq30` yourself first.
+  into `~/.local`. Review `omacore-install` before accepting the Yes action; to
+  opt out, choose No or install `openscq30` yourself first.
 
   **Version matters for newer devices.** R60i NC / P31i support landed in
   OpenSCQ30 v2.10.0. The `openscq30-cli-bin` AUR package may lag behind

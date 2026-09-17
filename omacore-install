@@ -2,8 +2,8 @@
 # Installs a pinned, hash-verified OpenSCQ30 CLI release into ~/.local.
 #
 # Two ways to run it:
-#   * "Install OpenSCQ30 CLI" button in the panel -> opens this in a visible
-#     terminal (omarchy-launch-terminal) so you can watch the download.
+#   * "Install OpenSCQ30 CLI" button in the panel -> opens this in a floating
+#     terminal with clickable Yes/No confirmation and visible download output.
 #   * Installation is only started from the explicit panel action, so the
 #     third-party binary is never downloaded without the user's consent.
 set -euo pipefail
@@ -30,6 +30,7 @@ if [ -n "$OMACORE_CTL" ] && "$OMACORE_CTL" list-models 2>/dev/null | grep -q "So
 fi
 
 command_exists curl || die "curl is required to download OpenSCQ30."
+command_exists gum || die "gum is required for the Yes/No confirmation."
 
 case "$(uname -m)" in
   x86_64) arch="x86_64" ;;
@@ -45,8 +46,14 @@ url="https://github.com/$OPENSCQ30_GH/releases/download/$OPENSCQ30_VERSION/$asse
 
 printf 'This will download and run OpenSCQ30 %s from the official GitHub release into %s.\n' \
   "$OPENSCQ30_VERSION" "$BIN_DIR"
-read -rp "Continue? [y/N] " answer
-[[ "$answer" =~ ^[Yy]$ ]] || die "Installation cancelled."
+if ! gum confirm \
+  "Install OpenSCQ30 $OPENSCQ30_VERSION?" \
+  --affirmative="Yes" \
+  --negative="No" \
+  --show-output
+then
+  die "Installation cancelled."
+fi
 
 mkdir -p "$BIN_DIR" "$HOME/.local/bin"
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/omacore-install.XXXXXX")"
