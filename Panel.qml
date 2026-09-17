@@ -235,8 +235,8 @@ Panel {
             Text {
               width: parent.width
               text: pods.cliInstalling
-                ? "Installing OpenSCQ30 CLI…\nThis is automatic — the widget downloads the official build into ~/.local (no sudo needed) and picks it up when it's done."
-                : "OpenSCQ30 (the program this widget talks to) is not installed.\nInstall it now — no sudo needed, it goes into ~/.local."
+                ? "Installing OpenSCQ30 CLI…\nConfirm the pinned official release in the terminal to continue."
+                : "OpenSCQ30 (the program this widget talks to) is not installed.\nInstall the pinned official release into ~/.local?"
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.body

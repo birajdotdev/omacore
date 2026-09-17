@@ -1,50 +1,35 @@
 #!/usr/bin/env bash
-# Installs the OpenSCQ30 CLI (official latest release) into ~/.local, no sudo
-# needed.
+# Installs a pinned, hash-verified OpenSCQ30 CLI release into ~/.local.
 #
 # Two ways to run it:
 #   * "Install OpenSCQ30 CLI" button in the panel -> opens this in a visible
 #     terminal (omarchy-launch-terminal) so you can watch the download.
-#   * The widget itself runs `omacore-install --silent` in the background the
-#     first time it notices the CLI is missing, so a fresh install self-heals
-#     without any interaction.
+#   * Installation is only started from the explicit panel action, so the
+#     third-party binary is never downloaded without the user's consent.
 set -euo pipefail
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
 
-SILENT=0
-[[ "${1:-}" == "--silent" ]] && SILENT=1
-
+OPENSCQ30_VERSION="v2.12.0"
 OPENSCQ30_GH="Oppzippy/OpenSCQ30"
 BIN_DIR="$HOME/.local/opt/openscq30"
 BIN_LINK="$HOME/.local/bin/openscq30"
+MAX_DOWNLOAD_BYTES=52428800
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
-say()  { (( SILENT )) || printf '\033[1;32m==>\033[0m %s\n' "$1"; }
-info() { (( SILENT )) || printf '\033[1;34m i\033[0m %s\n' "$1"; }
+say()  { printf '\033[1;32m==>\033[0m %s\n' "$1"; }
+info() { printf '\033[1;34m i\033[0m %s\n' "$1"; }
 die()  { printf '\033[1;31mERROR\033[0m %s\n' "$1" >&2; exit 1; }
-
-latest_release() {
-  if command_exists gh; then
-    gh release view --repo "$OPENSCQ30_GH" --json tagName --jq .tagName
-  else
-    curl -fsSL "https://api.github.com/repos/$OPENSCQ30_GH/releases/latest" \
-      | grep -o '"tag_name":[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\(.*\)"/\1/'
-  fi
-}
 
 if [ -n "$OMACORE_CTL" ] && "$OMACORE_CTL" list-models 2>/dev/null | grep -q "SoundcoreD1202"; then
   info "openscq30 already installed and recent: $("$OMACORE_CTL" --version 2>/dev/null | head -1)"
   info "Nothing to do."
-  (( SILENT )) || read -rp "Press Enter to close this window." _
+  read -rp "Press Enter to close this window." _
   exit 0
 fi
 
 command_exists curl || die "curl is required to download OpenSCQ30."
-
-tag="$(latest_release)" || true
-[[ -n "$tag" ]] || die "Could not determine the latest OpenSCQ30 release."
 
 case "$(uname -m)" in
   x86_64) arch="x86_64" ;;
@@ -52,26 +37,36 @@ case "$(uname -m)" in
   *) die "Unsupported architecture: $(uname -m) (OpenSCQ30 ships amd64/arm64 linux builds)" ;;
 esac
 asset="openscq30-cli-linux-$arch"
-url="https://$OPENSCQ30_GH/releases/download/$tag/$asset"
+case "$arch" in
+  x86_64) expected_sha256="97654c9dcadc320302529641e31536e3324a3eb8abb3bd2dd21bff5263ca3d08" ;;
+  arm64) expected_sha256="aeacdc17b5db6a67ec5a29775dde3d1ad8730d2f905404a27b57aecddc5f7814" ;;
+esac
+url="https://$OPENSCQ30_GH/releases/download/$OPENSCQ30_VERSION/$asset"
+
+printf 'This will download and run OpenSCQ30 %s from the official GitHub release into %s.\n' \
+  "$OPENSCQ30_VERSION" "$BIN_DIR"
+read -rp "Continue? [y/N] " answer
+[[ "$answer" =~ ^[Yy]$ ]] || die "Installation cancelled."
 
 mkdir -p "$BIN_DIR" "$HOME/.local/bin"
-say "Downloading $OPENSCQ30_GH/releases/download/$tag/$asset"
-if command_exists gh; then
-  gh release download "$tag" --repo "$OPENSCQ30_GH" --pattern "$asset" --dir "$BIN_DIR"
-else
-  # --progress-bar fights a non-tty stdout (the widget's background run) with
-  # carriage-return spam; keep it only for the visible-terminal path.
-  if (( SILENT )); then
-    curl -fsSL -o "$BIN_DIR/$asset" "$url"
-  else
-    curl -fSL --progress-bar -o "$BIN_DIR/$asset" "$url"
-  fi
-fi
-chmod +x "$BIN_DIR/$asset"
-ln -sf "$BIN_DIR/$asset" "$BIN_LINK"
-info "Installed: $BIN_LINK -> $BIN_DIR/$asset"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/omacore-install.XXXXXX")"
+trap 'rm -rf "$tmp_dir"' EXIT
+tmp_file="$tmp_dir/$asset"
+say "Downloading $url"
+curl --fail --location --silent --show-error \
+  --connect-timeout 10 --max-time 120 --max-filesize "$MAX_DOWNLOAD_BYTES" \
+  -o "$tmp_file" "$url"
+actual_size="$(wc -c < "$tmp_file")"
+(( actual_size > 0 && actual_size <= MAX_DOWNLOAD_BYTES )) \
+  || die "Downloaded file exceeds the ${MAX_DOWNLOAD_BYTES}-byte limit."
+actual_sha256="$(sha256sum "$tmp_file" | awk '{print $1}')"
+[[ "$actual_sha256" == "$expected_sha256" ]] \
+  || die "SHA-256 mismatch for $asset; refusing to install."
 
-(( SILENT )) && exit 0
+verified_file="$BIN_DIR/$asset-$OPENSCQ30_VERSION"
+install -m 0755 "$tmp_file" "$verified_file"
+ln -sfn "$verified_file" "$BIN_LINK"
+info "Installed verified $OPENSCQ30_VERSION: $BIN_LINK -> $verified_file"
 
 echo
 echo "Next: register your earbuds, then pair them over Bluetooth."

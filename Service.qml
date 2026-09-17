@@ -114,27 +114,12 @@ Item {
   // poll picks the CLI up once it lands on PATH, so no manual refresh needed.
   function installCli() {
     if (installProcess.running) return
+    cliInstalling = true
     installProcess.command = ["omarchy-launch-terminal", installScript]
     installProcess.running = true
   }
 
-  // Auto-heal: the first poll that finds the CLI missing kicks off a silent
-  // background install. No sudo needed (goes into ~/.local), so the widget can
-  // just do it. `--silent` keeps the download quiet; a popup-less notification
-  // tells the user what happened and the next poll picks the CLI up.
-  readonly property int installRetryMs: 10 * 60 * 1000
-  property var _installFailedAt: 0
   property bool cliInstalling: false
-
-  function _startCliInstall() {
-    if (cliInstalling || installProcess.running) return
-    if (_installFailedAt !== 0 && Date.now() - _installFailedAt < installRetryMs) return
-    _installFailedAt = 0
-    cliInstalling = true
-    _notify("Installing OpenSCQ30 CLI", "This widget needs openscq30 to read your Soundcore earbuds. Downloading the official build into ~/.local — no sudo needed.", "normal")
-    installProcess.command = [installScript, "--silent"]
-    installProcess.running = true
-  }
 
   // Auto-heal for registration: a connected device whose model is unambiguous
   // gets registered the moment omacore-status first reports it. If the add
@@ -175,7 +160,6 @@ Item {
       else if (missing) {
         registeredMissing = false
         lastError = "openscq30 / openscq30-cli not found on PATH."
-        _startCliInstall()
       } else if (needReg) {
         unregisteredMac = parsed.unregisteredMac || ""
         unregisteredName = parsed.unregisteredName || ""
@@ -495,7 +479,6 @@ Item {
         if (exitCode === 0) {
           root._notify("OpenSCQ30 installed", "The OpenSCQ30 CLI is ready — this widget will find it automatically.", "normal")
         } else {
-          root._installFailedAt = Date.now()
           root._notify("OpenSCQ30 install failed", Model.elideError(installErr.text) || "Try the panel's Install button to run it in a terminal.", "normal")
         }
       }
