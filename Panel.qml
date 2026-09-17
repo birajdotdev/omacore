@@ -15,6 +15,7 @@ Panel {
 
   property int cursorIndex: 0
   property bool cursorActive: false
+  property bool installConfirmOpen: false
 
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -104,8 +105,19 @@ Panel {
   }
 
   function launchInstaller() {
+    installConfirmOpen = true
+    installConfirm.selectedIndex = 1
+  }
+
+  function confirmInstaller() {
+    installConfirmOpen = false
     root.close()
     pods.installCli()
+  }
+
+  function cancelInstaller() {
+    installConfirmOpen = false
+    keyCatcher.forceActiveFocus()
   }
 
   visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing
@@ -173,7 +185,7 @@ Panel {
       // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
       // handling) — without this our own Keys.priority: BeforeItem would
       // swallow them first and the popup's list would never scroll or close.
-      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen
+      blocked: installConfirmOpen || ncModeDropdown.popupOpen || registerModelDropdown.popupOpen
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         if (root.cursorRow === "manuallevel" && dx !== 0) {
@@ -395,6 +407,7 @@ Panel {
                   onActivated: pods.setAncMode(modelData)
                 }
               }
+
             }
           }
 
@@ -605,6 +618,25 @@ Panel {
             horizontalAlignment: Text.AlignHCenter
           }
         }
+      }
+
+      ConfirmDialog {
+        id: installConfirm
+        anchors.fill: parent
+        opened: root.installConfirmOpen
+        z: 10
+        message: "Install OpenSCQ30 CLI? Omacore will download the pinned, hash-verified release into ~/.local using a floating terminal."
+        cancelText: "No"
+        confirmText: "Yes"
+        background: root.background
+        foreground: root.foreground
+        scrim: root.scrim
+        selectedBackground: root.selectedBackground
+        selectedText: root.selectedText
+        fontFamily: root.fontFamily
+        cornerRadius: root.cornerRadius
+        onCanceled: root.cancelInstaller()
+        onConfirmed: root.confirmInstaller()
       }
     }
   }
