@@ -109,12 +109,11 @@ Item {
     pollWatchdog.restart()
   }
 
-  // Opens the bundled omacore-install in a visible terminal so the user can
-  // watch the download; no sudo needed (installs into ~/.local). The regular
-  // poll picks the CLI up once it lands on PATH, so no manual refresh needed.
+  // Opens the bundled installer in Omarchy's centered floating terminal so
+  // the user can review the confirmation and watch the download.
   function installCli() {
     if (installProcess.running) return
-    installProcess.command = ["omarchy-launch-terminal", installScript]
+    installProcess.command = ["omarchy-launch-floating-terminal-with-presentation", installScript]
     installProcess.running = true
   }
 
