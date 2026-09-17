@@ -41,7 +41,7 @@ case "$arch" in
   x86_64) expected_sha256="97654c9dcadc320302529641e31536e3324a3eb8abb3bd2dd21bff5263ca3d08" ;;
   arm64) expected_sha256="aeacdc17b5db6a67ec5a29775dde3d1ad8730d2f905404a27b57aecddc5f7814" ;;
 esac
-url="https://$OPENSCQ30_GH/releases/download/$OPENSCQ30_VERSION/$asset"
+url="https://github.com/$OPENSCQ30_GH/releases/download/$OPENSCQ30_VERSION/$asset"
 
 printf 'This will download and run OpenSCQ30 %s from the official GitHub release into %s.\n' \
   "$OPENSCQ30_VERSION" "$BIN_DIR"
