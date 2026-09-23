@@ -15,6 +15,62 @@ Panel {
 
   property int cursorIndex: 0
   property bool cursorActive: false
+  property bool effectsView: false
+  property bool dualView: false
+  property bool manageHistory: false
+  readonly property var currentDevices: pods.dualConnectionsDevices.map(function (mac) {
+    var option = pods.dualConnectionsOptions.find(function (o) { return o.value === mac })
+    return option || { value: mac, label: mac }
+  })
+  readonly property var historyDevices: pods.dualConnectionsOptions.filter(function (o) {
+    return pods.dualConnectionsDevices.indexOf(o.value) < 0
+  })
+  readonly property bool hasSoundEffects: pods.customEqSupported || pods.eqOptions.length > 0 || (pods.spatialAudioSupported && pods.spatialAudioModeSupported)
+  readonly property string effectsSummary: {
+    if (pods.spatialAudio) return "Spatial Audio · " + Model.soundEffectLabel(pods.spatialAudioMode)
+    if (pods.customEqActive) return "Custom EQ" + (pods.customEqProfile ? " · " + pods.customEqProfile : "")
+    for (var i = 0; i < pods.eqOptions.length; i++) {
+      if (pods.eqOptions[i].value === pods.eqPreset) return "Default · " + pods.eqOptions[i].label
+    }
+    return pods.eqOptions.length ? "Custom EQ" : "Default"
+  }
+
+  function showEffects(show) {
+    ncModeDropdown.close()
+    eqPresetDropdown.close()
+    customEditor.closeEditors()
+    effectsView = show
+    dualView = false
+    manageHistory = false
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function showDual(show) {
+    ncModeDropdown.close()
+    eqPresetDropdown.close()
+    customEditor.closeEditors()
+    manageHistory = false
+    dualView = show
+    effectsView = false
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function selectDefault() {
+    if (!pods.eqOptions.length) { pods.setSoundEffect(Model.SOUND_EFFECT_OFF); return }
+    var preset = pods.eqOptions.some(function (o) { return o.value === pods.eqPreset })
+      ? pods.eqPreset : pods.eqOptions[0].value
+    pods.setEqPreset(preset)
+  }
+
+  function selectSpatial() {
+    pods.setSoundEffect(pods.spatialAudioMode || Model.SOUND_EFFECT_MUSIC)
+  }
 
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -26,7 +82,7 @@ Panel {
   readonly property color barIconColor: (pods.cliMissing || pods.registeredMissing) ? urgent
     : (pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55))
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
+  readonly property bool guidanceVisible: (!pods.hasEarbuds || pods.statusStale) && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
   readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
   readonly property bool transparencySectionVisible: pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported
   readonly property var ncModeOptions: Model.NC_SUBMODES.map(function (m) { return { value: m, label: Model.ncSubModeLabel(m) } })
@@ -44,6 +100,32 @@ Panel {
       return rows
     }
     if (!pods.hasEarbuds) return rows
+    if (effectsView) {
+      rows.push("back")
+      if (pods.spatialAudioSupported && pods.spatialAudioModeSupported) rows.push("spatial")
+      rows.push("default")
+      if (pods.customEqSupported) rows.push("custom")
+      if (pods.spatialAudio) {
+        for (var n = 0; n < Model.SPATIAL_EFFECTS.length; n++) rows.push("soundfx:" + Model.SPATIAL_EFFECTS[n])
+      } else if (pods.customEqActive) {
+        if (pods.customEqOptions.length) rows.push("customsaved")
+        for (var band = 0; band < pods.eqBands.length; band++) rows.push("eqband:" + band)
+        rows.push("customflat")
+        if (pods.customEqProfilesSupported) { rows.push("customname"); rows.push("customsave") }
+      } else if (pods.eqOptions.length) rows.push("eqpreset")
+      return rows
+    }
+    if (dualView) {
+      rows.push("back")
+      if (pods.dualConnectionsSupported) rows.push("dualtoggle")
+      if (pods.dualConnections && pods.dualConnectionsDevicesSupported) {
+        for (var d = 0; d < currentDevices.length; d++) rows.push("currentdevice:" + currentDevices[d].value)
+        if (historyDevices.length) rows.push("dualmanage")
+        for (var h = 0; h < historyDevices.length; h++)
+          rows.push((manageHistory ? "forgetdevice:" : "historydevice:") + historyDevices[h].value)
+      }
+      return rows
+    }
     for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
 
     if (pods.ancMode === Model.MODE_NOISE_CANCELING) {
@@ -60,10 +142,8 @@ Panel {
       for (var m = 0; m < Model.TRANSPARENCY_MODES.length; m++) rows.push("transparency:" + Model.TRANSPARENCY_MODES[m])
     }
 
-    if (pods.spatialAudioSupported) {
-      for (var n = 0; n < Model.SOUND_EFFECTS.length; n++) rows.push("soundfx:" + Model.SOUND_EFFECTS[n])
-    }
-
+    if (hasSoundEffects) rows.push("effects")
+    if (pods.dualConnectionsSupported) rows.push("dual")
     return rows
   }
 
@@ -86,7 +166,20 @@ Panel {
     if (name === "") return
     if (name === "installcli" && !pods.cliInstalling) { launchInstaller(); return }
     if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
+    if (name === "effects") { showEffects(true); return }
+    if (name === "dual") { showDual(true); return }
+    if (name === "back") { if (dualView) showDual(false); else showEffects(false); return }
+    if (name === "dualtoggle") { pods.setDualConnections(!pods.dualConnections); return }
+    if (name === "dualmanage") { manageHistory = !manageHistory; return }
+    if (name.indexOf("currentdevice:") === 0) { pods.setDeviceConnection(name.substring(14), false); return }
+    if (name.indexOf("historydevice:") === 0) { pods.setDeviceConnection(name.substring(14), true); return }
+    if (name.indexOf("forgetdevice:") === 0 && manageHistory) { pods.removeDualConnectionsDevice(name.substring(13)); return }
+    if (name === "default") { selectDefault(); return }
+    if (name === "spatial") { selectSpatial(); return }
+    if (name === "custom") { pods.setCustomEqBands(pods.eqBands); return }
+    if (name.indexOf("custom") === 0) { customEditor.activate(name); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
+    else if (name === "eqpreset") eqPresetDropdown.toggle()
     else if (name === "ncmode") ncModeDropdown.toggle()
     else if (name.indexOf("scene:") === 0) pods.setMultiSceneNoiseCanceling(name.substring(6))
     else if (name.indexOf("transparency:") === 0) pods.setTransparencyMode(name.substring(13))
@@ -108,11 +201,14 @@ Panel {
     pods.installCli()
   }
 
-  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing
+  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing || pods.statusStale
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: if (opened) {
+    effectsView = false
+    dualView = false
+    manageHistory = false
     cursorActive = false
     cursorIndex = 0
     if (panelFlick) panelFlick.contentY = 0
@@ -123,11 +219,14 @@ Panel {
   Service {
     id: pods
     settings: root.settings
+    liveUpdates: root.opened && root.dualView
+    onHasEarbudsChanged: if (!hasEarbuds) root.showEffects(false)
   }
 
   IpcHandler {
     target: root.ipcTarget
     function open(): void { root.open() }
+    function openDual(): void { root.open(); root.showDual(true) }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { pods.refresh(); return "ok" }
@@ -173,9 +272,13 @@ Panel {
       // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
       // handling) — without this our own Keys.priority: BeforeItem would
       // swallow them first and the popup's list would never scroll or close.
-      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen
+    blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen || eqPresetDropdown.popupOpen || customEditor.popupOpen || customEditor.inputFocused
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
+        if (root.cursorRow.indexOf("eqband:") === 0 && dx !== 0) {
+          customEditor.adjust(Number(root.cursorRow.substring(7)), dx)
+          return
+        }
         if (root.cursorRow === "manuallevel" && dx !== 0) {
           pods.setManualNoiseCancelingLevel(pods.manualNoiseCancelingLevel + dx)
           return
@@ -183,13 +286,13 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
-      onCloseRequested: root.close()
+      onCloseRequested: root.effectsView ? root.showEffects(false) : root.dualView ? root.showDual(false) : root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
         else if (key === "i" && pods.cliMissing && !pods.cliInstalling) launchInstaller()
-        else if (!pods.hasEarbuds) return
+        else if (!pods.hasEarbuds || root.effectsView || root.dualView) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
         else if (key === "o") pods.setAncMode(Model.MODE_NORMAL)
@@ -214,6 +317,7 @@ Panel {
 
           PanelHero {
             id: hero
+            visible: !root.effectsView && !root.dualView
             width: parent.width
             title: pods.cliMissing ? "OpenSCQ30 CLI required" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
@@ -344,7 +448,7 @@ Panel {
           }
 
           Column {
-            visible: pods.hasEarbuds
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(10)
 
@@ -365,12 +469,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds
             foreground: root.foreground
           }
 
           Column {
-            visible: pods.hasEarbuds
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(10)
 
@@ -400,12 +504,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds && root.ncSectionVisible
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.ncSectionVisible
             foreground: root.foreground
           }
 
           Column {
-            visible: pods.hasEarbuds && root.ncSectionVisible
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.ncSectionVisible
             width: parent.width
             spacing: Style.space(10)
 
@@ -454,6 +558,7 @@ Panel {
                     value: pods.noiseCancelingMode
                   }
                 }
+
               }
 
               ManualLevelRow {
@@ -516,12 +621,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds && root.transparencySectionVisible
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.transparencySectionVisible
             foreground: root.foreground
           }
 
           Column {
-            visible: pods.hasEarbuds && root.transparencySectionVisible
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.transparencySectionVisible
             width: parent.width
             spacing: Style.space(10)
 
@@ -550,46 +655,302 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds && pods.spatialAudioSupported
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.hasSoundEffects
             foreground: root.foreground
           }
 
-          Column {
-            visible: pods.hasEarbuds && pods.spatialAudioSupported
+          NavigationRow {
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.hasSoundEffects
             width: parent.width
-            spacing: Style.space(10)
+            rowName: "effects"
+            title: "Sound Effects"
+            subtitle: root.effectsSummary
+            onActivated: root.showEffects(true)
+          }
+
+          PanelSeparator {
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && pods.dualConnectionsSupported
+            foreground: root.foreground
+          }
+
+          NavigationRow {
+            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && pods.dualConnectionsSupported
+            width: parent.width
+            rowName: "dual"
+            title: "Dual Connections"
+            subtitle: pods.dualConnections ? "On" : "Off"
+            onActivated: root.showDual(true)
+          }
+
+          Column {
+            visible: (root.effectsView || root.dualView) && pods.hasEarbuds
+            width: parent.width
+            spacing: Style.space(12)
+
+            CursorSurface {
+              implicitWidth: backContent.implicitWidth + Style.space(16)
+              implicitHeight: backContent.implicitHeight + Style.space(12)
+              foreground: root.foreground
+              hasCursor: root.rowHasCursor("back")
+              RowLayout {
+                id: backContent
+                anchors.centerIn: parent
+                spacing: Style.space(10)
+                Canvas {
+                  Layout.alignment: Qt.AlignVCenter
+                  implicitWidth: Style.space(12)
+                  implicitHeight: Style.space(22)
+                  property color ink: root.foreground
+                  onInkChanged: requestPaint()
+                  onWidthChanged: requestPaint()
+                  onHeightChanged: requestPaint()
+                  onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = ink
+                    ctx.lineWidth = Style.space(2)
+                    ctx.lineCap = "round"
+                    ctx.lineJoin = "round"
+                    ctx.beginPath()
+                    ctx.moveTo(width * 0.75, height * 0.2)
+                    ctx.lineTo(width * 0.25, height * 0.5)
+                    ctx.lineTo(width * 0.75, height * 0.8)
+                    ctx.stroke()
+                  }
+                }
+                Text {
+                  Layout.alignment: Qt.AlignVCenter
+              text: "Back to earbuds"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: root.focusRow("back")
+                onClicked: root.dualView ? root.showDual(false) : root.showEffects(false)
+              }
+            }
 
             PanelSectionHeader {
+              visible: root.effectsView
+              width: parent.width
               text: "SOUND EFFECTS"
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
 
-            Row {
-              id: soundEffectRow
+            ToggleRow {
+              visible: root.dualView && pods.dualConnectionsSupported
               width: parent.width
-              spacing: Style.space(6)
+              rowName: "dualtoggle"
+              label: "Dual Connections"
+              fullRow: true
+              on: pods.dualConnections
+              onActivated: pods.setDualConnections(!pods.dualConnections)
+            }
 
-              readonly property real cellWidth: Model.SOUND_EFFECTS.length > 0
-                ? (width - spacing * (Model.SOUND_EFFECTS.length - 1)) / Model.SOUND_EFFECTS.length
-                : 0
+            PanelSeparator {
+              visible: root.dualView && pods.dualConnections
+              foreground: root.foreground
+            }
 
+            Column {
+              visible: root.dualView && pods.dualConnections
+              width: parent.width
+              spacing: Style.space(8)
+              PanelSectionHeader {
+                text: "CURRENT"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
               Repeater {
-                model: Model.SOUND_EFFECTS
-                Button {
+                model: root.currentDevices
+                ConnectionRow {
                   required property var modelData
-                  width: soundEffectRow.cellWidth
-                  text: Model.soundEffectLabel(modelData)
+                  width: parent.width
+                  rowName: "currentdevice:" + modelData.value
+                  label: modelData.label
+                  checked: true
+                  onActivated: pods.setDeviceConnection(modelData.value, false)
+                }
+              }
+              Text {
+                visible: root.currentDevices.length === 0
+                width: parent.width
+                text: "No connected devices reported"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+            }
+
+            PanelSeparator {
+              visible: root.dualView && pods.dualConnections
+              foreground: root.foreground
+            }
+
+            Column {
+              visible: root.dualView && pods.dualConnections
+              width: parent.width
+              spacing: Style.space(8)
+              RowLayout {
+                width: parent.width
+                PanelSectionHeader {
+                  Layout.fillWidth: true
+                  text: "HISTORY"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                }
+                Button {
+                  visible: root.historyDevices.length > 0
+                  text: root.manageHistory ? "Done" : "Manage"
                   fontSize: Style.font.bodySmall
                   foreground: root.foreground
                   fontFamily: root.fontFamily
-                  horizontalPadding: Style.spacing.controlPaddingX
-                  verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
-                  bordered: true
-                  active: pods.soundEffect === modelData
-                  hasCursor: root.rowHasCursor("soundfx:" + modelData)
-                  onClicked: pods.setSoundEffect(modelData)
-                  onHovered: function (h) { if (h) root.focusRow("soundfx:" + modelData) }
+                  hasCursor: root.rowHasCursor("dualmanage")
+                  onHovered: function (h) { if (h) root.focusRow("dualmanage") }
+                  onClicked: root.manageHistory = !root.manageHistory
+                }
+              }
+              Repeater {
+                model: root.historyDevices
+                ConnectionRow {
+                  required property var modelData
+                  width: parent.width
+                  rowName: (root.manageHistory ? "forgetdevice:" : "historydevice:") + modelData.value
+                  label: modelData.label
+                  checked: false
+                  removable: root.manageHistory
+                  onActivated: pods.setDeviceConnection(modelData.value, true)
+                  onForgetRequested: pods.removeDualConnectionsDevice(modelData.value)
+                }
+              }
+              Text {
+                visible: root.historyDevices.length === 0
+                width: parent.width
+                text: "No saved devices"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+            }
+
+            Column {
+              visible: root.effectsView
+              width: parent.width
+              spacing: Style.space(6)
+              OptionRow {
+                visible: pods.spatialAudioSupported && pods.spatialAudioModeSupported
+                width: parent.width
+                rowName: "spatial"
+                label: "Spatial Audio"
+                selected: pods.spatialAudio
+                onActivated: root.selectSpatial()
+              }
+              OptionRow {
+                width: parent.width
+                rowName: "default"
+                label: "Default"
+                selected: !pods.spatialAudio && !pods.customEqActive
+                onActivated: root.selectDefault()
+              }
+              OptionRow {
+                visible: pods.customEqSupported
+                width: parent.width
+                rowName: "custom"
+                label: "Custom EQ"
+                selected: pods.customEqActive
+                onActivated: pods.setCustomEqBands(pods.eqBands)
+              }
+            }
+
+            PanelSeparator { visible: root.effectsView; foreground: root.foreground }
+
+            Column {
+              visible: root.effectsView && !pods.spatialAudio && !pods.customEqActive && pods.eqOptions.length > 0
+              width: parent.width
+              spacing: Style.space(10)
+              PanelSectionHeader {
+                text: "EQ PRESET"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+              RowLayout {
+                width: parent.width
+                spacing: Style.space(8)
+                Dropdown {
+                  id: eqPresetDropdown
+                  Layout.fillWidth: true
+                  showLabel: false
+                  value: pods.eqPreset || "Custom EQ"
+                  options: pods.eqOptions
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  hasCursor: root.rowHasCursor("eqpreset")
+                  onChanged: function (v) { pods.setEqPreset(v) }
+                  onHovered: function (h) { if (h) root.focusRow("eqpreset") }
+                  Binding {
+                    target: eqPresetDropdown
+                    property: "value"
+                    value: pods.eqPreset || "Custom EQ"
+                  }
+                }
+
+              }
+            }
+
+            CustomEqEditor {
+              id: customEditor
+              visible: root.effectsView && pods.customEqActive
+              width: parent.width
+              service: pods
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              cursorRow: root.cursorActive ? root.cursorRow : ""
+              onFocusRowRequested: function (name) { root.focusRow(name) }
+              onReleaseFocus: keyCatcher.forceActiveFocus()
+              onRevealItem: function (item) {
+                if (!item || !root.effectsView || !visible) return
+                var y = item.mapToItem(column, 0, 0).y
+                if (y < panelFlick.contentY) panelFlick.contentY = y
+                else if (y + item.height > panelFlick.contentY + panelFlick.height)
+                  panelFlick.contentY = Math.max(0, y + item.height - panelFlick.height)
+              }
+            }
+
+            Column {
+              visible: root.effectsView && pods.spatialAudio && pods.spatialAudioModeSupported
+              width: parent.width
+              spacing: Style.space(6)
+              PanelSectionHeader {
+                text: "SPATIAL AUDIO MODE"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+              Row {
+                id: spatialModeRow
+                width: parent.width
+                spacing: Style.space(6)
+                Repeater {
+                  model: Model.SPATIAL_EFFECTS
+                  Button {
+                    required property var modelData
+                    width: (spatialModeRow.width - spatialModeRow.spacing * (Model.SPATIAL_EFFECTS.length - 1)) / Model.SPATIAL_EFFECTS.length
+                    text: Model.soundEffectLabel(modelData)
+                    fontSize: Style.font.bodySmall
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    bordered: true
+                    active: pods.spatialAudioMode === modelData
+                    hasCursor: root.rowHasCursor("soundfx:" + modelData)
+                    onClicked: pods.setSoundEffect(modelData)
+                    onHovered: function (h) { if (h) root.focusRow("soundfx:" + modelData) }
+                  }
                 }
               }
             }
@@ -608,6 +969,136 @@ Panel {
         }
       }
 
+    }
+  }
+
+  component ConnectionRow: CursorSurface {
+    id: connectionRow
+    property string rowName: ""
+    property string label: ""
+    property bool checked: false
+    property bool removable: false
+    signal activated()
+    signal forgetRequested()
+    foreground: root.foreground
+    hasCursor: root.rowHasCursor(rowName)
+    implicitHeight: Math.max(connectionLabel.implicitHeight, Style.space(28)) + Style.space(14)
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: !connectionRow.removable && pods.individualConnectionsSupported ? Qt.PointingHandCursor : Qt.ArrowCursor
+      onEntered: root.focusRow(connectionRow.rowName)
+      onClicked: if (!connectionRow.removable && pods.individualConnectionsSupported) connectionRow.activated()
+    }
+    RowLayout {
+      anchors.fill: parent
+      anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
+      spacing: Style.space(10)
+      Text {
+        id: connectionLabel
+        Layout.fillWidth: true
+        text: connectionRow.label
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+      ToggleSwitch {
+        visible: !connectionRow.removable && pods.individualConnectionsSupported
+        Layout.alignment: Qt.AlignVCenter
+        trackHeight: Math.round(connectionLabel.font.pixelSize * 1.2)
+        checked: connectionRow.checked
+        interactive: false
+        foreground: root.foreground
+        opacity: pods.updating || pods.statusStale ? 0.5 : 1
+        MouseArea {
+          anchors.fill: parent
+          enabled: !pods.updating && !pods.statusStale
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onEntered: root.focusRow(connectionRow.rowName)
+          onClicked: connectionRow.activated()
+        }
+      }
+      Text {
+        visible: !connectionRow.removable && !pods.individualConnectionsSupported
+        text: connectionRow.checked ? "Connected" : "Saved"
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+      PanelActionButton {
+        visible: connectionRow.removable
+        enabled: !pods.updating && !pods.statusStale
+        Layout.alignment: Qt.AlignVCenter
+        iconText: "󰅙"
+        tooltipText: "Forget device"
+        foreground: root.foreground
+        hoverColor: root.foreground
+        fontFamily: root.fontFamily
+        hasCursor: root.rowHasCursor(connectionRow.rowName)
+        onHovered: function (h) { if (h) root.focusRow(connectionRow.rowName) }
+        onClicked: connectionRow.forgetRequested()
+      }
+    }
+  }
+
+  component NavigationRow: CursorSurface {
+    id: nav
+    property string rowName: ""
+    property string title: ""
+    property string subtitle: ""
+    property bool back: false
+    signal activated()
+    hasCursor: root.rowHasCursor(rowName)
+    foreground: root.foreground
+    implicitHeight: navText.implicitHeight + Style.space(16)
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.focusRow(nav.rowName)
+      onClicked: nav.activated()
+    }
+    RowLayout {
+      anchors.fill: parent
+      anchors.margins: Style.space(8)
+      spacing: Style.space(10)
+      Text {
+        visible: nav.back
+        text: "‹"
+        font.pixelSize: Style.font.display
+        color: root.foreground
+      }
+      Column {
+        id: navText
+        Layout.fillWidth: true
+        spacing: Style.space(4)
+        Text {
+          width: parent.width
+          text: nav.title
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+        Text {
+          width: parent.width
+          text: nav.subtitle
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          elide: Text.ElideRight
+        }
+      }
+
+      Text {
+        visible: !nav.back
+        text: "›"
+        font.pixelSize: Style.font.display
+        color: root.foreground
+      }
     }
   }
 
@@ -730,6 +1221,7 @@ Panel {
     property string rowName: ""
     property string label: ""
     property bool on: false
+    property bool fullRow: false
     signal activated()
 
     // Unlike the checkmark-list rows, only the switch itself is
@@ -737,13 +1229,25 @@ Panel {
     // of its own, so hovering the label doesn't light up the whole row. The
     // switch shows its own compact cursor ring instead (below).
     foreground: root.foreground
-    implicitHeight: Math.max(toggleLabel.implicitHeight, toggleSwitch.implicitHeight)
+    hasCursor: fullRow && root.rowHasCursor(rowName)
+    implicitHeight: Math.max(toggleLabel.implicitHeight, toggleSwitch.implicitHeight) + (fullRow ? Style.space(16) : 0)
+
+    MouseArea {
+      anchors.fill: parent
+      enabled: toggleRow.fullRow
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.focusRow(toggleRow.rowName)
+      onClicked: toggleRow.activated()
+    }
 
     // Flush with the Mode row above — no row background to pad out to here.
     RowLayout {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
+      anchors.leftMargin: toggleRow.fullRow ? Style.space(10) : 0
+      anchors.rightMargin: toggleRow.fullRow ? Style.space(10) : 0
       spacing: Style.space(8)
 
       Text {
@@ -764,7 +1268,7 @@ Panel {
         checked: toggleRow.on
         interactive: false
         cursorRing: true
-        hasCursor: root.rowHasCursor(toggleRow.rowName)
+        hasCursor: !toggleRow.fullRow && root.rowHasCursor(toggleRow.rowName)
         foreground: root.foreground
 
         MouseArea {

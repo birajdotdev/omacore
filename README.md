@@ -1,7 +1,7 @@
 <h1 align="center">Omacore</h1>
 
 <p align="center">
-  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, and Sound Effects, drawn in Omarchy's own panel idiom.
+  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, Sound Effects and EQ presets, drawn in Omarchy's own panel idiom.
 </p>
 
 <p align="center">
@@ -65,12 +65,29 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
       Noise Cancellation) to flip it.
   - **Transparency** shows a Fully Transparent / Vocal Mode picker.
   - **Normal** shows none of the above — only Sound Effects, below.
-- **Sound Effects** (Soundcore's spatial audio) — Music / Movie / Gaming as
-  three side-by-side buttons, always shown regardless of sound mode.
+- **Sound Effects** — one row on the main panel shows the active selection.
+  Open it for a dedicated view with three choices:
+  - **Default**: choose a built-in EQ preset using the device's own labels.
+    Selecting Default or a preset turns spatial audio off.
+  - **Spatial Audio**: Music / Movie / Gaming. Selecting a mode enables
+    spatial audio; the EQ preset selector is hidden while it is active.
+  - **Custom EQ**: edit the device's supported frequency bands, reset to flat,
+    and save or load named presets. Custom EQ disables spatial audio. Bands,
+    gain limits, and precision come from the device schema (the R60i NC has
+    eight bands, 100 Hz–12.8 kHz). Dragging applies on release; left/right on
+    a focused band adjusts by 1 dB. Presets are saved in OpenSCQ30's database
+    and survive shell restarts. An existing name shows **Update preset**.
+  The back arrow or `esc` returns to the main panel. Opening the panel starts
+  on the main view. Only features reported by the device are shown.
+- **Update feedback** — setting changes are queued in click order, without loading or success
+  indicators. Only failures show a text message. Reads and writes do not
+  overlap. A failed write cancels the remaining queue and refreshes device state.
+- **Connection feedback** — temporary read failures retain the last known
+  values with a warning instead of generating a false disconnect alert.
 
 All of the above are only shown when openscq30 reports the setting at all
 (model and firmware dependent — confirmed present on the R60i NC / P31i).
-OpenSCQ30 exposes still more per-device settings (button remapping, EQ,
+OpenSCQ30 exposes still more per-device settings (button remapping,
 dual connections, …) — run `openscq30 device -a <mac> list-settings --json`
 to see everything your earbuds support, and extend
 `Model.js`/`Service.qml`/`Panel.qml` the same way the rest is wired if you
@@ -174,7 +191,7 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 | Key | Action |
 |-----|--------|
 | `j` / `k`, `↓` / `↑` | move between rows |
-| `←` / `→` | adjust the Manual ANC level, when it's the focused row |
+| `←` / `→` | adjust the focused Manual ANC level or Custom EQ band |
 | `enter` / `space` | activate the current row |
 | `n` | Noise Cancellation |
 | `t` | Transparency |
@@ -182,7 +199,7 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 | `w` | toggle wind noise suppression (while in Noise Cancellation, if supported) |
 | `r` | refresh |
 | `tab` | move to the next panel |
-| `esc` | close |
+| `esc` | return from Sound Effects; otherwise close |
 
 Every other setting (scene, transparency mode, sound effect) is reached by
 moving the cursor to its row and pressing `enter`/`space`, or by clicking it
@@ -202,6 +219,13 @@ Left click opens the panel.
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is fixable — a missing `openscq30` CLI, or a device connected but not yet registered with OpenSCQ30 — so the install/register controls stay reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 
+## Development checks
+
+Run `node tests/regression.cjs` from the project root. The tests cover model
+parsing, queued setting writes, transient read errors, numeric ANC settings,
+and custom EQ ranges, saved-profile commands, and value settling
+using fake CLI commands (no earbud settings are changed).
+
 ## Credits
 
 The hard part is not this panel. It is
@@ -214,3 +238,21 @@ devices. This panel only shells out to its CLI and draws what comes back.
 MIT. See [LICENSE](LICENSE). This plugin vendors no OpenSCQ30 code — it only
 invokes the separately-installed `openscq30` binary, which is GPL-3.0-or-later
 under its own project.
+
+### Dual Connections device controls
+
+The Dual Connections page refreshes every three seconds while open. Current
+and History rows have individual connection switches on the P31i (D1202) and
+R60i NC (D1202C). With two devices connected, disconnect one before enabling
+another. Turning off the computer's own connection also disconnects Omacore
+until the earbuds reconnect. Manage replaces History switches with explicit
+Forget buttons; switching a device off does not forget it.
+
+`omacore-connection` uses the system `/usr/bin/python` and `python-gobject`
+(Gio/BlueZ) for these two models, working around the OpenSCQ30 2.12.0 CLI's
+multi-select parsing bug. Its wire commands follow the protocol implemented in
+OpenSCQ30's `common/packet/outbound/dual_connections.rs`. It reads the live device
+list before sending a command for one known host, and never replaces the other
+connection. Other models keep read-only connection status. General settings and
+Forget continue to use OpenSCQ30. Run helper checks with
+`/usr/bin/python tests/test_connection.py`; these do not access Bluetooth.

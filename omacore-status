@@ -17,10 +17,15 @@ if [ -z "$OMACORE_CTL" ]; then
   exit 0
 fi
 
-paired_json=$($OMACORE_CTL paired-devices list --json 2>/dev/null)
-[ -z "$paired_json" ] && paired_json='[]'
+read_error() {
+  jq -n --arg error "$1" '{connected:false, readError:true, error:$error}'
+  exit 0
+}
 
-connected_raw=$(bluetoothctl devices Connected 2>/dev/null)
+paired_json=$("$OMACORE_CTL" paired-devices list --json 2>/dev/null) || read_error "Could not read the OpenSCQ30 device registry."
+jq -e 'type == "array"' <<<"$paired_json" >/dev/null 2>&1 || read_error "Invalid device registry response."
+
+connected_raw=$(bluetoothctl devices Connected 2>/dev/null) || read_error "Could not check Bluetooth connections."
 
 mac=""
 name=""
@@ -92,15 +97,16 @@ if [ -z "$mac" ]; then
   exit 0
 fi
 
-schema_json=$($OMACORE_CTL device --mac-address "$mac" list-settings --json 2>/dev/null)
-[ -z "$schema_json" ] && schema_json='[]'
+schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud settings could not be read."
+jq -e 'type == "array" and length > 0' <<<"$schema_json" >/dev/null 2>&1 || read_error "No settings returned by the earbuds."
 
-filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")]' <<<"$schema_json")
+filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections")]' <<<"$schema_json")
 
 ids=$(jq -r '
-  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")
+  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections")
        | .settings[] | select(.type=="select" or .type=="optionalSelect" or .type=="toggle"
-                                or .type=="equalizer" or .type=="information")
+                                or .type=="equalizer" or .type=="information" or .type=="i32Range" or .type=="modifiableSelect"
+                                or .type=="multiSelectWithRemove")
        | .settingId]
   | unique | .[]
 ' <<<"$schema_json" 2>/dev/null)
@@ -113,8 +119,8 @@ done <<<"$ids"
 
 values_json='[]'
 if [ "${#get_args[@]}" -gt 0 ]; then
-  values_json=$($OMACORE_CTL device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null)
-  [ -z "$values_json" ] && values_json='[]'
+  values_json=$("$OMACORE_CTL" device --mac-address "$mac" setting "${get_args[@]}" --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud status could not be read."
+  jq -e 'type == "array" and length > 0 and all(.[]; has("settingId") and (.value | type == "object" and has("value")))' <<<"$values_json" >/dev/null 2>&1 || read_error "Invalid earbud status response."
 fi
 
 values_map=$(jq '[.[] | {(.settingId): .value.value}] | add // {}' <<<"$values_json")

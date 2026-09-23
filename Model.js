@@ -16,6 +16,8 @@ var SETTING_MULTI_SCENE_NOISE_CANCELING = "multiSceneNoiseCanceling"
 var SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING = "realTimeAdaptiveNoiseCanceling"
 var SETTING_SPATIAL_AUDIO = "spatialAudio"
 var SETTING_SPATIAL_AUDIO_MODE = "spatialAudioMode"
+var SETTING_DUAL_CONNECTIONS = "dualConnections"
+var SETTING_DUAL_CONNECTIONS_DEVICES = "dualConnectionsDevices"
 
 // AmbientSoundMode values — confirmed present on D1202/D1202C.
 var MODE_NOISE_CANCELING = "NoiseCanceling"
@@ -44,7 +46,7 @@ var SOUND_EFFECT_OFF = "Off"
 var SOUND_EFFECT_MUSIC = "Music"
 var SOUND_EFFECT_MOVIE = "Movie"
 var SOUND_EFFECT_GAMING = "Gaming"
-var SOUND_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMING]
+var SPATIAL_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMING]
 
 var LEVEL_UNKNOWN = -1
 
@@ -154,10 +156,10 @@ function modelOptions(models) {
 function parseStatus(raw) {
   try {
     var parsed = JSON.parse(raw || "{}")
-    if (!parsed || typeof parsed !== "object") return { connected: false }
+    if (!parsed || typeof parsed !== "object" || typeof parsed.connected !== "boolean") return { connected: false, readError: true }
     return parsed
   } catch (e) {
-    return { connected: false }
+    return { connected: false, readError: true }
   }
 }
 
@@ -197,6 +199,12 @@ function statusFromMap(map) {
   status.spatialAudioModeSupported = has(map, SETTING_SPATIAL_AUDIO_MODE)
   status.spatialAudioMode = String(map[SETTING_SPATIAL_AUDIO_MODE] || "")
 
+  status.dualConnectionsSupported = has(map, SETTING_DUAL_CONNECTIONS)
+  status.dualConnections = boolFromToggle(map[SETTING_DUAL_CONNECTIONS])
+  status.dualConnectionsDevicesSupported = has(map, SETTING_DUAL_CONNECTIONS_DEVICES)
+  status.dualConnectionsDevices = Array.isArray(map[SETTING_DUAL_CONNECTIONS_DEVICES])
+    ? map[SETTING_DUAL_CONNECTIONS_DEVICES].slice() : []
+
   return status
 }
 
@@ -225,7 +233,11 @@ function defaultStatus() {
     spatialAudioSupported: false,
     spatialAudio: false,
     spatialAudioModeSupported: false,
-    spatialAudioMode: ""
+    spatialAudioMode: "",
+    dualConnectionsSupported: false,
+    dualConnections: false,
+    dualConnectionsDevicesSupported: false,
+    dualConnectionsDevices: []
   }
 }
 
@@ -233,4 +245,56 @@ function defaultStatus() {
 function elideError(text) {
   var value = String(text || "").replace(/\s+/g, " ").trim()
   return value.length > MAX_ERROR_CHARS ? value.substring(0, ELIDED_ERROR_CHARS) + "…" : value
+}
+
+// Use the device's choices and labels rather than assuming a model's presets.
+var SETTING_EQ_PRESET = "presetEqualizerProfile"
+function selectOptions(schema, id) {
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      if (settings[j].settingId !== id) continue
+      var spec = settings[j].setting || {}
+      return (spec.options || []).map(function (value, index) {
+        return { value: value, label: (spec.localizedOptions || [])[index] || value }
+      })
+    }
+  }
+  return []
+}
+
+var SETTING_CUSTOM_EQ = "customEqualizerProfile"
+var SETTING_EQ_BANDS = "volumeAdjustments"
+
+function eqSpecification(schema) {
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      var entry = settings[j]
+      if (entry.settingId !== SETTING_EQ_BANDS || entry.type !== "equalizer" || entry.readOnly) continue
+      var spec = entry.setting || {}
+      if (!Array.isArray(spec.bandHz) || !spec.bandHz.length ||
+          !spec.bandHz.every(function (n) { return typeof n === "number" && isFinite(n) && n > 0 }) ||
+          typeof spec.min !== "number" || typeof spec.max !== "number" ||
+          !isFinite(spec.min) || !isFinite(spec.max) || spec.min >= spec.max ||
+          !Number.isInteger(spec.fractionDigits) || spec.fractionDigits < 0 || spec.fractionDigits > 4) return null
+      return spec
+    }
+  }
+  return null
+}
+
+function normalizeEqBands(values, spec) {
+  if (!spec || !Array.isArray(values) || values.length !== spec.bandHz.length) return null
+  if (!values.every(function (v) { return typeof v === "number" && isFinite(v) })) return null
+  return values.map(function (v) { return Math.max(spec.min, Math.min(spec.max, Math.round(v))) })
+}
+
+function frequencyLabel(hz) {
+  return hz >= 1000 ? String(hz / 1000) + "k" : String(hz)
+}
+
+// ModifiableSelect reserves + and - for creation/deletion; escape names on load.
+function customProfileValue(name) {
+  return /^[+\-\\]/.test(name) ? "\\" + name : name
 }

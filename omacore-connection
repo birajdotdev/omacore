@@ -1,0 +1,180 @@
+#!/usr/bin/python
+"""Individual multipoint commands for D1202/C; requires system python-gobject.
+Wire format verified against OpenSCQ30 v2.12.0 common/packet and dual_connections.
+Only a named, already-known host is changed; no pairing or forget commands.
+"""
+import json
+import re
+import socket
+import struct
+import sys
+import time
+from gi.repository import Gio, GLib
+
+MAC = re.compile(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
+PROFILE = '/io/github/omacore/Connection'
+XML = '''<node><interface name="org.bluez.Profile1">
+<method name="Release"/><method name="RequestDisconnection"><arg type="o" direction="in"/></method>
+<method name="NewConnection"><arg type="o" direction="in"/><arg type="h" direction="in"/><arg type="a{sv}" direction="in"/></method>
+</interface></node>'''
+
+
+def packet(command, body=b''):
+    raw = b'\x08\xee\0\0\0' + bytes(command) + struct.pack('<H', 10 + len(body)) + body
+    return raw + bytes([sum(raw) & 255])
+
+
+class Link:
+    def __init__(self, mac):
+        self.bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        self.sock = None
+        self.registered = False
+        self.object_id = None
+        self.loop = GLib.MainLoop()
+        self.error = None
+        objects = self.call('/', 'org.freedesktop.DBus.ObjectManager', 'GetManagedObjects').unpack()[0]
+        matches = [(p, i['org.bluez.Device1']) for p, i in objects.items()
+                   if 'org.bluez.Device1' in i and i['org.bluez.Device1'].get('Address', '').upper() == mac]
+        if len(matches) != 1 or not matches[0][1].get('Connected'):
+            raise ValueError('Earbuds must be connected over Bluetooth.')
+        self.device, properties = matches[0]
+        uuids = properties.get('UUIDs', [])
+        self.uuid = next((u for u in uuids if u.lower().startswith('0cf12d31-fac3-4553-bd80-d6832e7')), '00001101-0000-1000-8000-00805f9b34fb')
+
+    def call(self, path, interface, method, args=None):
+        return self.bus.call_sync('org.bluez', path, interface, method, args, None,
+                                  Gio.DBusCallFlags.NONE, 5000, None)
+
+    def handle(self, bus, sender, path, interface, method, args, invocation):
+        if method == 'NewConnection':
+            device, handle, _ = args.unpack()
+            if device != self.device or self.sock is not None:
+                invocation.return_dbus_error('org.bluez.Error.Rejected', 'Unexpected device')
+                return
+            fd = invocation.get_message().get_unix_fd_list().get(handle)
+            self.sock = socket.socket(fileno=fd)
+        invocation.return_value(GLib.Variant('()', ()))
+        if method in ('NewConnection', 'Release', 'RequestDisconnection'):
+            self.loop.quit()
+
+    def open(self):
+        self.object_id = self.bus.register_object(PROFILE, Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], self.handle, None, None)
+        self.call('/org/bluez', 'org.bluez.ProfileManager1', 'RegisterProfile',
+                  GLib.Variant('(osa{sv})', (PROFILE, self.uuid, {'Role': GLib.Variant('s', 'client')})))
+        self.registered = True
+        def done(bus, result):
+            try:
+                bus.call_finish(result)
+            except GLib.Error as error:
+                self.error = error
+                self.loop.quit()
+        def timeout():
+            self.error = TimeoutError('Bluetooth control connection timed out.')
+            self.loop.quit()
+            return False
+        timer = GLib.timeout_add(6000, timeout)
+        self.bus.call('org.bluez', self.device, 'org.bluez.Device1', 'ConnectProfile',
+                      GLib.Variant('(s)', (self.uuid,)), None, Gio.DBusCallFlags.NONE, 5000, None, done)
+        self.loop.run()
+        if not isinstance(self.error, TimeoutError):
+            GLib.source_remove(timer)
+        if self.sock is None:
+            raise RuntimeError(str(self.error or 'Bluetooth control connection was closed.'))
+        self.buffer = b''
+        return self
+
+    def close(self):
+        if self.sock:
+            self.sock.close()
+        if self.registered:
+            try:
+                self.call('/org/bluez', 'org.bluez.ProfileManager1', 'UnregisterProfile', GLib.Variant('(o)', (PROFILE,)))
+            except GLib.Error:
+                pass
+        if self.object_id:
+            self.bus.unregister_object(self.object_id)
+
+    def receive(self, deadline):
+        while True:
+            if len(self.buffer) >= 9:
+                if self.buffer[:5] != b'\x09\xff\0\0\x01':
+                    raise ValueError('Invalid Soundcore response header.')
+                length = struct.unpack('<H', self.buffer[7:9])[0]
+                if not 10 <= length <= 4096:
+                    raise ValueError('Invalid Soundcore packet length.')
+                if len(self.buffer) >= length:
+                    raw, self.buffer = self.buffer[:length], self.buffer[length:]
+                    if (sum(raw[:-1]) & 255) != raw[-1]:
+                        raise ValueError('Invalid Soundcore checksum.')
+                    return raw[5:7], raw[9:-1]
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise TimeoutError('Earbud response timed out.')
+            self.sock.settimeout(left)
+            data = self.sock.recv(4096)
+            if not data:
+                raise ConnectionError('Earbud control connection closed.')
+            self.buffer += data
+
+    def devices(self):
+        self.sock.sendall(packet((0x0b, 1)))
+        deadline = time.monotonic() + 4
+        parts = {}
+        while True:
+            command, body = self.receive(deadline)
+            if command != b'\x0b\x01':
+                continue
+            if len(body) < 2 or not 1 <= body[1] <= body[0] <= 20:
+                raise ValueError('Invalid multipoint device list.')
+            total, index = body[:2]
+            rows, offset = [], 2
+            while offset < len(body):
+                length = body[offset]
+                if length < 8 or offset + length > len(body) or body[offset + 1] not in (0, 1):
+                    raise ValueError('Invalid multipoint device entry.')
+                item = body[offset:offset + length]
+                rows.append({'mac': ':'.join(f'{b:02X}' for b in item[2:8]),
+                             'connected': bool(item[1]), 'name': item[8:].split(b'\0')[0].decode('utf-8', 'replace')})
+                offset += length
+            parts[index] = rows
+            if all(i in parts for i in range(1, total + 1)):
+                return [row for i in range(1, total + 1) for row in parts[i]]
+
+
+def main(args):
+    if len(args) not in (3, 4) or args[1] not in ('SoundcoreD1202', 'SoundcoreD1202C'):
+        raise ValueError('Usage: omacore-connection EARBUD_MAC MODEL --list | HOST_MAC true/false')
+    earbud = args[0].upper()
+    if not MAC.fullmatch(earbud):
+        raise ValueError('Invalid earbud address.')
+    listing = len(args) == 3 and args[2] == '--list'
+    if not listing and (len(args) != 4 or not MAC.fullmatch(args[2].upper()) or args[3] not in ('true', 'false')):
+        raise ValueError('Invalid connection request.')
+    link = Link(earbud)
+    try:
+        link.open()
+        rows = link.devices()
+        if listing:
+            print(json.dumps(rows))
+            return
+        target, enabled = args[2].upper(), args[3] == 'true'
+        entry = next((row for row in rows if row['mac'] == target), None)
+        if entry is None:
+            raise ValueError('Device is no longer in the saved device list.')
+        if entry['connected'] == enabled:
+            return
+        if enabled and sum(row['connected'] for row in rows) >= 2:
+            raise ValueError('Disconnect one device before connecting another (maximum two).')
+        link.sock.sendall(packet((0x0b, 0x82 if enabled else 0x81), bytes.fromhex(target.replace(':', ''))))
+        # These commands have no acknowledgement (OpenSCQ30 uses send_without_response).
+        # The panel refreshes actual state afterward; only the requested host is changed.
+    finally:
+        link.close()
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except (ValueError, RuntimeError, OSError, GLib.Error) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)
