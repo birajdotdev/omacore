@@ -226,6 +226,7 @@ Panel {
   IpcHandler {
     target: root.ipcTarget
     function open(): void { root.open() }
+    function openDual(): void { root.open(); root.showDual(true) }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { pods.refresh(); return "ok" }
@@ -752,6 +753,11 @@ Panel {
               onActivated: pods.setDualConnections(!pods.dualConnections)
             }
 
+            PanelSeparator {
+              visible: root.dualView && pods.dualConnections
+              foreground: root.foreground
+            }
+
             Column {
               visible: root.dualView && pods.dualConnections
               width: parent.width
@@ -783,8 +789,13 @@ Panel {
               }
             }
 
+            PanelSeparator {
+              visible: root.dualView && pods.dualConnections
+              foreground: root.foreground
+            }
+
             Column {
-              visible: root.dualView && pods.dualConnections && root.historyDevices.length > 0
+              visible: root.dualView && pods.dualConnections
               width: parent.width
               spacing: Style.space(8)
               RowLayout {
@@ -796,6 +807,7 @@ Panel {
                   fontFamily: root.fontFamily
                 }
                 Button {
+                  visible: root.historyDevices.length > 0
                   text: root.manageHistory ? "Done" : "Manage"
                   fontSize: Style.font.bodySmall
                   foreground: root.foreground
@@ -817,6 +829,14 @@ Panel {
                   onActivated: pods.setDeviceConnection(modelData.value, true)
                   onForgetRequested: pods.removeDualConnectionsDevice(modelData.value)
                 }
+              }
+              Text {
+                visible: root.historyDevices.length === 0
+                width: parent.width
+                text: "No saved devices"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
               }
             }
 
