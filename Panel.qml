@@ -15,6 +15,36 @@ Panel {
 
   property int cursorIndex: 0
   property bool cursorActive: false
+  property bool effectsView: false
+  readonly property bool hasSoundEffects: pods.eqOptions.length > 0 || (pods.spatialAudioSupported && pods.spatialAudioModeSupported)
+  readonly property string effectsSummary: {
+    if (pods.spatialAudio) return "Spatial Audio · " + Model.soundEffectLabel(pods.spatialAudioMode)
+    for (var i = 0; i < pods.eqOptions.length; i++) {
+      if (pods.eqOptions[i].value === pods.eqPreset) return "Default · " + pods.eqOptions[i].label
+    }
+    return pods.eqOptions.length ? "Custom EQ" : "Default"
+  }
+
+  function showEffects(show) {
+    ncModeDropdown.close()
+    eqPresetDropdown.close()
+    effectsView = show
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function selectDefault() {
+    if (!pods.eqOptions.length) { pods.setSoundEffect(Model.SOUND_EFFECT_OFF); return }
+    var preset = pods.eqOptions.some(function (o) { return o.value === pods.eqPreset })
+      ? pods.eqPreset : pods.eqOptions[0].value
+    pods.setEqPreset(preset)
+  }
+
+  function selectSpatial() {
+    pods.setSoundEffect(pods.spatialAudioMode || Model.SOUND_EFFECT_MUSIC)
+  }
 
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -26,7 +56,7 @@ Panel {
   readonly property color barIconColor: (pods.cliMissing || pods.registeredMissing) ? urgent
     : (pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55))
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property bool guidanceVisible: !pods.hasEarbuds && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
+  readonly property bool guidanceVisible: (!pods.hasEarbuds || pods.statusStale) && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
   readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
   readonly property bool transparencySectionVisible: pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported
   readonly property var ncModeOptions: Model.NC_SUBMODES.map(function (m) { return { value: m, label: Model.ncSubModeLabel(m) } })
@@ -44,6 +74,15 @@ Panel {
       return rows
     }
     if (!pods.hasEarbuds) return rows
+    if (effectsView) {
+      rows.push("back")
+      if (pods.spatialAudioSupported && pods.spatialAudioModeSupported) rows.push("spatial")
+      rows.push("default")
+      if (pods.spatialAudio) {
+        for (var n = 0; n < Model.SPATIAL_EFFECTS.length; n++) rows.push("soundfx:" + Model.SPATIAL_EFFECTS[n])
+      } else if (pods.eqOptions.length) rows.push("eqpreset")
+      return rows
+    }
     for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
 
     if (pods.ancMode === Model.MODE_NOISE_CANCELING) {
@@ -60,10 +99,7 @@ Panel {
       for (var m = 0; m < Model.TRANSPARENCY_MODES.length; m++) rows.push("transparency:" + Model.TRANSPARENCY_MODES[m])
     }
 
-    if (pods.spatialAudioSupported) {
-      for (var n = 0; n < Model.SOUND_EFFECTS.length; n++) rows.push("soundfx:" + Model.SOUND_EFFECTS[n])
-    }
-
+    if (hasSoundEffects) rows.push("effects")
     return rows
   }
 
@@ -86,7 +122,12 @@ Panel {
     if (name === "") return
     if (name === "installcli" && !pods.cliInstalling) { launchInstaller(); return }
     if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
+    if (name === "effects") { showEffects(true); return }
+    if (name === "back") { showEffects(false); return }
+    if (name === "default") { selectDefault(); return }
+    if (name === "spatial") { selectSpatial(); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
+    else if (name === "eqpreset") eqPresetDropdown.toggle()
     else if (name === "ncmode") ncModeDropdown.toggle()
     else if (name.indexOf("scene:") === 0) pods.setMultiSceneNoiseCanceling(name.substring(6))
     else if (name.indexOf("transparency:") === 0) pods.setTransparencyMode(name.substring(13))
@@ -108,11 +149,12 @@ Panel {
     pods.installCli()
   }
 
-  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing
+  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing || pods.statusStale
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: if (opened) {
+    effectsView = false
     cursorActive = false
     cursorIndex = 0
     if (panelFlick) panelFlick.contentY = 0
@@ -123,6 +165,7 @@ Panel {
   Service {
     id: pods
     settings: root.settings
+    onHasEarbudsChanged: if (!hasEarbuds) root.showEffects(false)
   }
 
   IpcHandler {
@@ -173,7 +216,7 @@ Panel {
       // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
       // handling) — without this our own Keys.priority: BeforeItem would
       // swallow them first and the popup's list would never scroll or close.
-      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen
+      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen || eqPresetDropdown.popupOpen
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         if (root.cursorRow === "manuallevel" && dx !== 0) {
@@ -183,13 +226,13 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
-      onCloseRequested: root.close()
+      onCloseRequested: root.effectsView ? root.showEffects(false) : root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
         else if (key === "i" && pods.cliMissing && !pods.cliInstalling) launchInstaller()
-        else if (!pods.hasEarbuds) return
+        else if (!pods.hasEarbuds || root.effectsView) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
         else if (key === "o") pods.setAncMode(Model.MODE_NORMAL)
@@ -214,6 +257,7 @@ Panel {
 
           PanelHero {
             id: hero
+            visible: !root.effectsView
             width: parent.width
             title: pods.cliMissing ? "OpenSCQ30 CLI required" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
@@ -344,7 +388,7 @@ Panel {
           }
 
           Column {
-            visible: pods.hasEarbuds
+            visible: !root.effectsView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(10)
 
@@ -365,12 +409,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds
+            visible: !root.effectsView && pods.hasEarbuds
             foreground: root.foreground
           }
 
           Column {
-            visible: pods.hasEarbuds
+            visible: !root.effectsView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(10)
 
@@ -400,12 +444,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds && root.ncSectionVisible
+            visible: !root.effectsView && pods.hasEarbuds && root.ncSectionVisible
             foreground: root.foreground
           }
 
           Column {
-            visible: pods.hasEarbuds && root.ncSectionVisible
+            visible: !root.effectsView && pods.hasEarbuds && root.ncSectionVisible
             width: parent.width
             spacing: Style.space(10)
 
@@ -454,6 +498,7 @@ Panel {
                     value: pods.noiseCancelingMode
                   }
                 }
+
               }
 
               ManualLevelRow {
@@ -516,12 +561,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds && root.transparencySectionVisible
+            visible: !root.effectsView && pods.hasEarbuds && root.transparencySectionVisible
             foreground: root.foreground
           }
 
           Column {
-            visible: pods.hasEarbuds && root.transparencySectionVisible
+            visible: !root.effectsView && pods.hasEarbuds && root.transparencySectionVisible
             width: parent.width
             spacing: Style.space(10)
 
@@ -550,46 +595,162 @@ Panel {
           }
 
           PanelSeparator {
-            visible: pods.hasEarbuds && pods.spatialAudioSupported
+            visible: !root.effectsView && pods.hasEarbuds && root.hasSoundEffects
             foreground: root.foreground
           }
 
-          Column {
-            visible: pods.hasEarbuds && pods.spatialAudioSupported
+          NavigationRow {
+            visible: !root.effectsView && pods.hasEarbuds && root.hasSoundEffects
             width: parent.width
-            spacing: Style.space(10)
+            rowName: "effects"
+            title: "Sound Effects"
+            subtitle: root.effectsSummary
+            onActivated: root.showEffects(true)
+          }
+
+          Column {
+            visible: root.effectsView && pods.hasEarbuds
+            width: parent.width
+            spacing: Style.space(12)
+
+            CursorSurface {
+              implicitWidth: backContent.implicitWidth + Style.space(16)
+              implicitHeight: backContent.implicitHeight + Style.space(12)
+              foreground: root.foreground
+              hasCursor: root.rowHasCursor("back")
+              RowLayout {
+                id: backContent
+                anchors.centerIn: parent
+                spacing: Style.space(10)
+                Canvas {
+                  Layout.alignment: Qt.AlignVCenter
+                  implicitWidth: Style.space(12)
+                  implicitHeight: Style.space(22)
+                  property color ink: root.foreground
+                  onInkChanged: requestPaint()
+                  onWidthChanged: requestPaint()
+                  onHeightChanged: requestPaint()
+                  onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    ctx.strokeStyle = ink
+                    ctx.lineWidth = Style.space(2)
+                    ctx.lineCap = "round"
+                    ctx.lineJoin = "round"
+                    ctx.beginPath()
+                    ctx.moveTo(width * 0.75, height * 0.2)
+                    ctx.lineTo(width * 0.25, height * 0.5)
+                    ctx.lineTo(width * 0.75, height * 0.8)
+                    ctx.stroke()
+                  }
+                }
+                Text {
+                  Layout.alignment: Qt.AlignVCenter
+                  text: "Back to earbuds"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+              MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: root.focusRow("back")
+                onClicked: root.showEffects(false)
+              }
+            }
 
             PanelSectionHeader {
+              width: parent.width
               text: "SOUND EFFECTS"
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
 
-            Row {
-              id: soundEffectRow
+            Column {
               width: parent.width
               spacing: Style.space(6)
+              OptionRow {
+                visible: pods.spatialAudioSupported && pods.spatialAudioModeSupported
+                width: parent.width
+                rowName: "spatial"
+                label: "Spatial Audio"
+                selected: pods.spatialAudio
+                onActivated: root.selectSpatial()
+              }
+              OptionRow {
+                width: parent.width
+                rowName: "default"
+                label: "Default"
+                selected: !pods.spatialAudio
+                onActivated: root.selectDefault()
+              }
+            }
 
-              readonly property real cellWidth: Model.SOUND_EFFECTS.length > 0
-                ? (width - spacing * (Model.SOUND_EFFECTS.length - 1)) / Model.SOUND_EFFECTS.length
-                : 0
+            PanelSeparator { foreground: root.foreground }
 
-              Repeater {
-                model: Model.SOUND_EFFECTS
-                Button {
-                  required property var modelData
-                  width: soundEffectRow.cellWidth
-                  text: Model.soundEffectLabel(modelData)
-                  fontSize: Style.font.bodySmall
+            Column {
+              visible: !pods.spatialAudio && pods.eqOptions.length > 0
+              width: parent.width
+              spacing: Style.space(10)
+              PanelSectionHeader {
+                text: "EQ PRESET"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+              RowLayout {
+                width: parent.width
+                spacing: Style.space(8)
+                Dropdown {
+                  id: eqPresetDropdown
+                  Layout.fillWidth: true
+                  showLabel: false
+                  value: pods.eqPreset || "Custom EQ"
+                  options: pods.eqOptions
                   foreground: root.foreground
                   fontFamily: root.fontFamily
-                  horizontalPadding: Style.spacing.controlPaddingX
-                  verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
-                  bordered: true
-                  active: pods.soundEffect === modelData
-                  hasCursor: root.rowHasCursor("soundfx:" + modelData)
-                  onClicked: pods.setSoundEffect(modelData)
-                  onHovered: function (h) { if (h) root.focusRow("soundfx:" + modelData) }
+                  hasCursor: root.rowHasCursor("eqpreset")
+                  onChanged: function (v) { pods.setEqPreset(v) }
+                  onHovered: function (h) { if (h) root.focusRow("eqpreset") }
+                  Binding {
+                    target: eqPresetDropdown
+                    property: "value"
+                    value: pods.eqPreset || "Custom EQ"
+                  }
+                }
+
+              }
+            }
+
+            Column {
+              visible: pods.spatialAudio && pods.spatialAudioModeSupported
+              width: parent.width
+              spacing: Style.space(6)
+              PanelSectionHeader {
+                text: "SPATIAL AUDIO MODE"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+              Row {
+                id: spatialModeRow
+                width: parent.width
+                spacing: Style.space(6)
+                Repeater {
+                  model: Model.SPATIAL_EFFECTS
+                  Button {
+                    required property var modelData
+                    width: (spatialModeRow.width - spatialModeRow.spacing * (Model.SPATIAL_EFFECTS.length - 1)) / Model.SPATIAL_EFFECTS.length
+                    text: Model.soundEffectLabel(modelData)
+                    fontSize: Style.font.bodySmall
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    bordered: true
+                    active: pods.spatialAudioMode === modelData
+                    hasCursor: root.rowHasCursor("soundfx:" + modelData)
+                    onClicked: pods.setSoundEffect(modelData)
+                    onHovered: function (h) { if (h) root.focusRow("soundfx:" + modelData) }
+                  }
                 }
               }
             }
@@ -608,6 +769,64 @@ Panel {
         }
       }
 
+    }
+  }
+
+  component NavigationRow: CursorSurface {
+    id: nav
+    property string rowName: ""
+    property string title: ""
+    property string subtitle: ""
+    property bool back: false
+    signal activated()
+    hasCursor: root.rowHasCursor(rowName)
+    foreground: root.foreground
+    implicitHeight: navText.implicitHeight + Style.space(16)
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: root.focusRow(nav.rowName)
+      onClicked: nav.activated()
+    }
+    RowLayout {
+      anchors.fill: parent
+      anchors.margins: Style.space(8)
+      spacing: Style.space(10)
+      Text {
+        visible: nav.back
+        text: "‹"
+        font.pixelSize: Style.font.display
+        color: root.foreground
+      }
+      Column {
+        id: navText
+        Layout.fillWidth: true
+        spacing: Style.space(4)
+        Text {
+          width: parent.width
+          text: nav.title
+          color: root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+        }
+        Text {
+          width: parent.width
+          text: nav.subtitle
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          elide: Text.ElideRight
+        }
+      }
+
+      Text {
+        visible: !nav.back
+        text: "›"
+        font.pixelSize: Style.font.display
+        color: root.foreground
+      }
     }
   }
 

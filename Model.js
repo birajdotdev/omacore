@@ -44,7 +44,7 @@ var SOUND_EFFECT_OFF = "Off"
 var SOUND_EFFECT_MUSIC = "Music"
 var SOUND_EFFECT_MOVIE = "Movie"
 var SOUND_EFFECT_GAMING = "Gaming"
-var SOUND_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMING]
+var SPATIAL_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMING]
 
 var LEVEL_UNKNOWN = -1
 
@@ -154,10 +154,10 @@ function modelOptions(models) {
 function parseStatus(raw) {
   try {
     var parsed = JSON.parse(raw || "{}")
-    if (!parsed || typeof parsed !== "object") return { connected: false }
+    if (!parsed || typeof parsed !== "object" || typeof parsed.connected !== "boolean") return { connected: false, readError: true }
     return parsed
   } catch (e) {
-    return { connected: false }
+    return { connected: false, readError: true }
   }
 }
 
@@ -233,4 +233,20 @@ function defaultStatus() {
 function elideError(text) {
   var value = String(text || "").replace(/\s+/g, " ").trim()
   return value.length > MAX_ERROR_CHARS ? value.substring(0, ELIDED_ERROR_CHARS) + "…" : value
+}
+
+// Use the device's choices and labels rather than assuming a model's presets.
+var SETTING_EQ_PRESET = "presetEqualizerProfile"
+function selectOptions(schema, id) {
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      if (settings[j].settingId !== id) continue
+      var spec = settings[j].setting || {}
+      return (spec.options || []).map(function (value, index) {
+        return { value: value, label: (spec.localizedOptions || [])[index] || value }
+      })
+    }
+  }
+  return []
 }

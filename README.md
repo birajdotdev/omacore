@@ -1,7 +1,7 @@
 <h1 align="center">Omacore</h1>
 
 <p align="center">
-  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, and Sound Effects, drawn in Omarchy's own panel idiom.
+  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, Sound Effects and EQ presets, drawn in Omarchy's own panel idiom.
 </p>
 
 <p align="center">
@@ -65,12 +65,24 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
       Noise Cancellation) to flip it.
   - **Transparency** shows a Fully Transparent / Vocal Mode picker.
   - **Normal** shows none of the above — only Sound Effects, below.
-- **Sound Effects** (Soundcore's spatial audio) — Music / Movie / Gaming as
-  three side-by-side buttons, always shown regardless of sound mode.
+- **Sound Effects** — one row on the main panel shows the active selection.
+  Open it for a dedicated view with two choices:
+  - **Default**: choose a built-in EQ preset using the device's own labels.
+    Selecting Default or a preset turns spatial audio off.
+  - **Spatial Audio**: Music / Movie / Gaming. Selecting a mode enables
+    spatial audio; the EQ preset selector is hidden while it is active.
+  The back arrow or `esc` returns to the main panel. Opening the panel starts
+  on the main view. Custom EQ editing is planned for a later release; an
+  existing custom EQ is displayed as “Custom EQ” without changing it.
+- **Update feedback** — setting changes are queued in click order, without loading or success
+  indicators. Only failures show a text message. Reads and writes do not
+  overlap. A failed write cancels the remaining queue and refreshes device state.
+- **Connection feedback** — temporary read failures retain the last known
+  values with a warning instead of generating a false disconnect alert.
 
 All of the above are only shown when openscq30 reports the setting at all
 (model and firmware dependent — confirmed present on the R60i NC / P31i).
-OpenSCQ30 exposes still more per-device settings (button remapping, EQ,
+OpenSCQ30 exposes still more per-device settings (button remapping, custom EQ editing,
 dual connections, …) — run `openscq30 device -a <mac> list-settings --json`
 to see everything your earbuds support, and extend
 `Model.js`/`Service.qml`/`Panel.qml` the same way the rest is wired if you
@@ -182,7 +194,7 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 | `w` | toggle wind noise suppression (while in Noise Cancellation, if supported) |
 | `r` | refresh |
 | `tab` | move to the next panel |
-| `esc` | close |
+| `esc` | return from Sound Effects; otherwise close |
 
 Every other setting (scene, transparency mode, sound effect) is reached by
 moving the cursor to its row and pressing `enter`/`space`, or by clicking it
@@ -201,6 +213,12 @@ Left click opens the panel.
 | Poll interval (seconds) | 30 | How often the widget re-runs `omacore-status`. |
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is fixable — a missing `openscq30` CLI, or a device connected but not yet registered with OpenSCQ30 — so the install/register controls stay reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
+
+## Development checks
+
+Run `node tests/regression.cjs` from the project root. The tests cover model
+parsing, queued setting writes, transient read errors, and numeric ANC settings
+using fake CLI commands (no earbud settings are changed).
 
 ## Credits
 
