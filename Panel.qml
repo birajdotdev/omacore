@@ -17,6 +17,14 @@ Panel {
   property bool cursorActive: false
   property bool effectsView: false
   property bool dualView: false
+  property bool settingsView: false
+  property string settingsDetail: ""
+  property bool buttonsView: false
+  property string selectedGesture: ""
+  property bool resetButtonsArmed: false
+  property bool importEqArmed: false
+  readonly property bool mainView: !effectsView && !dualView && !settingsView && !buttonsView
+  readonly property var selectedGestureInfo: Model.BUTTON_GESTURES.find(function (gesture) { return gesture.id === selectedGesture }) || ({ side: "", label: "" })
   property bool manageHistory: false
   readonly property var currentDevices: pods.dualConnectionsDevices.map(function (mac) {
     var option = pods.dualConnectionsOptions.find(function (o) { return o.value === mac })
@@ -26,6 +34,20 @@ Panel {
     return pods.dualConnectionsDevices.indexOf(o.value) < 0
   })
   readonly property bool hasSoundEffects: pods.customEqSupported || pods.eqOptions.length > 0 || (pods.spatialAudioSupported && pods.spatialAudioModeSupported)
+  readonly property bool devicePickerVisible: mainView && !pods.cliMissing && !pods.registeredMissing &&
+    (pods.availableDevices.length > 1 || pods.deviceMatch !== "")
+  readonly property var deviceOptions: [{ value: "", label: "Automatic" }].concat(pods.availableDevices.map(function (device) {
+    return { value: device.mac, label: device.name + " · " + device.mac.slice(-5) }
+  }))
+  readonly property string devicePickerValue: {
+    if (pods.deviceMatch === "") return ""
+    var match = pods.deviceMatch.toLowerCase()
+    for (var i = 0; i < pods.availableDevices.length; i++) {
+      var device = pods.availableDevices[i]
+      if (device.mac.toLowerCase().indexOf(match) >= 0 || device.name.toLowerCase().indexOf(match) >= 0) return device.mac
+    }
+    return pods.deviceMatch
+  }
   readonly property string effectsSummary: {
     if (pods.spatialAudio) return "Spatial Audio · " + Model.soundEffectLabel(pods.spatialAudioMode)
     if (pods.customEqActive) return "Custom EQ" + (pods.customEqProfile ? " · " + pods.customEqProfile : "")
@@ -36,11 +58,18 @@ Panel {
   }
 
   function showEffects(show) {
+    deviceDropdown.close()
     ncModeDropdown.close()
     eqPresetDropdown.close()
     customEditor.closeEditors()
     effectsView = show
     dualView = false
+    settingsView = false
+    settingsDetail = ""
+    buttonsView = false
+    selectedGesture = ""
+    resetButtonsArmed = false
+    importEqArmed = false
     manageHistory = false
     cursorActive = false
     cursorIndex = 0
@@ -49,16 +78,118 @@ Panel {
   }
 
   function showDual(show) {
+    deviceDropdown.close()
     ncModeDropdown.close()
     eqPresetDropdown.close()
     customEditor.closeEditors()
     manageHistory = false
     dualView = show
     effectsView = false
+    settingsView = false
+    settingsDetail = ""
+    buttonsView = false
+    selectedGesture = ""
+    resetButtonsArmed = false
+    importEqArmed = false
     cursorActive = false
     cursorIndex = 0
     panelFlick.contentY = 0
     Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function showSettings(show) {
+    deviceDropdown.close()
+    ncModeDropdown.close()
+    eqPresetDropdown.close()
+    customEditor.closeEditors()
+    settingsView = show
+    settingsDetail = ""
+    effectsView = false
+    dualView = false
+    buttonsView = false
+    selectedGesture = ""
+    resetButtonsArmed = false
+    importEqArmed = false
+    manageHistory = false
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function showHighVolume() {
+    if (!pods.limitHighVolumeSupported) return
+    settingsDetail = "volume"
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function showDeviceInfo() {
+    settingsDetail = "info"
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  readonly property var deviceInfoRows: [
+    { label: "Model", value: pods.deviceModel },
+    { label: "Left firmware", value: pods.deviceInfo.firmwareLeft || "" },
+    { label: "Right firmware", value: pods.deviceInfo.firmwareRight || "" },
+    { label: "Serial number", value: pods.deviceInfo.serial || "" },
+    { label: "Earbud connection", value: pods.deviceInfo.tws || "" },
+    { label: "Primary earbud", value: pods.deviceInfo.host || "" },
+    { label: "Wind detected", value: pods.deviceInfo.wind === "true" ? "Yes" : pods.deviceInfo.wind === "false" ? "No" : pods.deviceInfo.wind || "" },
+    { label: "Adaptive ANC", value: pods.deviceInfo.adaptive || "" }
+  ].filter(function (row) { return row.value !== "" })
+
+  function showButtons(show) {
+    deviceDropdown.close()
+    ncModeDropdown.close()
+    eqPresetDropdown.close()
+    customEditor.closeEditors()
+    buttonsView = show
+    effectsView = false
+    dualView = false
+    settingsView = false
+    settingsDetail = ""
+    selectedGesture = ""
+    resetButtonsArmed = false
+    manageHistory = false
+    importEqArmed = false
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function showGesture(id) {
+    if (!pods.buttonOptions[id] || !pods.buttonOptions[id].length) return
+    selectedGesture = id
+    resetButtonsArmed = false
+    cursorActive = false
+    cursorIndex = 0
+    panelFlick.contentY = 0
+    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+  }
+
+  function confirmResetButtons() {
+    if (!pods.buttonResetSupported || !pods.hasButtonControls) return
+    if (!resetButtonsArmed) { resetButtonsArmed = true; return }
+    resetButtonsArmed = false
+    pods.resetButtonBindings()
+  }
+
+  function goBack() {
+    if (buttonsView && selectedGesture !== "") { showButtons(true); return }
+    if (buttonsView) { showButtons(false); return }
+    if (settingsView && settingsDetail !== "") { showSettings(true); return }
+    if (settingsView) { showSettings(false); return }
+    if (dualView) { showDual(false); return }
+    if (effectsView) { showEffects(false); return }
+    close()
   }
 
   function selectDefault() {
@@ -72,7 +203,16 @@ Panel {
     pods.setSoundEffect(pods.spatialAudioMode || Model.SOUND_EFFECT_MUSIC)
   }
 
+  function importEq() {
+    if (!importEqArmed) { importEqArmed = true; return }
+    importEqArmed = false
+    pods.transferEq("import")
+  }
+
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
+  readonly property bool showBatteryPercent: setting("showBatteryPercent", true) === true
+  readonly property int barBatteryLevel: Model.barBatteryLevel(pods.leftLevel, pods.rightLevel, pods.caseLevel)
+  readonly property bool barBatteryVisible: showBatteryPercent && (!bar || !bar.vertical) && pods.hasEarbuds && barBatteryLevel !== Model.LEVEL_UNKNOWN
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
@@ -80,7 +220,7 @@ Panel {
   // showing as an alert in the bar even when the buds are (as a result)
   // unreachable — a broken setup should be loud, not invisible.
   readonly property color barIconColor: (pods.cliMissing || pods.registeredMissing) ? urgent
-    : (pods.hasEarbuds ? barForeground : Qt.darker(barForeground, 1.55))
+    : (pods.hasEarbuds ? (barBatteryLevel >= 0 && barBatteryLevel <= pods.lowBatteryPercent ? urgent : barForeground) : Qt.darker(barForeground, 1.55))
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property bool guidanceVisible: (!pods.hasEarbuds || pods.statusStale) && pods.lastError !== "" && !pods.cliMissing && !pods.registeredMissing
   readonly property bool ncSectionVisible: pods.ancMode === Model.MODE_NOISE_CANCELING
@@ -99,6 +239,7 @@ Panel {
       rows.push("registerdev")
       return rows
     }
+    if (devicePickerVisible) rows.push("device")
     if (!pods.hasEarbuds) return rows
     if (effectsView) {
       rows.push("back")
@@ -113,6 +254,37 @@ Panel {
         rows.push("customflat")
         if (pods.customEqProfilesSupported) { rows.push("customname"); rows.push("customsave") }
       } else if (pods.eqOptions.length) rows.push("eqpreset")
+      if (pods.eqTransferSupported) { if (pods.customEqOptions.length) rows.push("eqexport"); rows.push("eqimport") }
+      return rows
+    }
+    if (settingsView) {
+      rows.push("back")
+      if (settingsDetail === "volume") {
+        rows.push("volumetoggle")
+        for (var v = 0; v < pods.limitDbOptions.length; v++) rows.push("volumedb:" + pods.limitDbOptions[v].value)
+        for (var r = 0; r < pods.limitRateOptions.length; r++) rows.push("volumerate:" + pods.limitRateOptions[r].value)
+      } else if (settingsDetail === "") {
+        for (var p = 0; p < pods.autoPowerOffOptions.length; p++)
+          rows.push("power:" + pods.autoPowerOffOptions[p].value)
+        if (pods.touchToneSupported) rows.push("touchtone")
+        if (pods.lowBatteryPromptSupported) rows.push("lowprompt")
+        if (pods.limitHighVolumeSupported) rows.push("volumesettings")
+        if (deviceInfoRows.length) rows.push("deviceinfo")
+      }
+      return rows
+    }
+    if (buttonsView) {
+      rows.push("back")
+      if (selectedGesture !== "") {
+        var choices = pods.buttonOptions[selectedGesture] || []
+        for (var b = 0; b < choices.length; b++) rows.push("buttonoption:" + choices[b].value)
+      } else {
+        for (var g = 0; g < Model.BUTTON_GESTURES.length; g++) {
+          var id = Model.BUTTON_GESTURES[g].id
+          if (pods.buttonOptions[id] && pods.buttonOptions[id].length) rows.push("button:" + id)
+        }
+        if (pods.buttonResetSupported) rows.push("resetbuttons")
+      }
       return rows
     }
     if (dualView) {
@@ -143,6 +315,9 @@ Panel {
     }
 
     if (hasSoundEffects) rows.push("effects")
+    if (pods.ldacSupported) rows.push("ldac")
+    if ((pods.autoPowerOffSupported && pods.autoPowerOffOptions.length) || pods.limitHighVolumeSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || deviceInfoRows.length) rows.push("settings")
+    if (pods.hasButtonControls) rows.push("buttons")
     if (pods.dualConnectionsSupported) rows.push("dual")
     return rows
   }
@@ -159,6 +334,28 @@ Panel {
     cursorActive = true
     if (cursorRows.length === 0) return
     cursorIndex = Math.max(0, Math.min(cursorRows.length - 1, cursorIndex + dy))
+    Qt.callLater(revealCursor)
+  }
+
+  function findCursorItem(parentItem, name) {
+    if (!parentItem) return null
+    if (parentItem.visible && parentItem.rowName === name) return parentItem
+    for (var i = 0; i < parentItem.children.length; i++) {
+      var found = findCursorItem(parentItem.children[i], name)
+      if (found) return found
+    }
+    return null
+  }
+
+  function revealCursor() {
+    if (!cursorActive || !panelFlick || !column) return
+    var item = findCursorItem(column, cursorRow)
+    if (!item) return
+    var top = item.mapToItem(column, 0, 0).y
+    var bottom = top + item.height
+    if (top < panelFlick.contentY) panelFlick.contentY = top
+    else if (bottom > panelFlick.contentY + panelFlick.height)
+      panelFlick.contentY = Math.max(0, Math.min(panelFlick.contentHeight - panelFlick.height, bottom - panelFlick.height))
   }
 
   function activateCursor() {
@@ -166,9 +363,23 @@ Panel {
     if (name === "") return
     if (name === "installcli" && !pods.cliInstalling) { launchInstaller(); return }
     if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
+    if (name === "device") { deviceDropdown.toggle(); return }
     if (name === "effects") { showEffects(true); return }
     if (name === "dual") { showDual(true); return }
-    if (name === "back") { if (dualView) showDual(false); else showEffects(false); return }
+    if (name === "settings") { showSettings(true); return }
+    if (name === "buttons") { showButtons(true); return }
+    if (name === "back") { goBack(); return }
+    if (name === "volumesettings") { showHighVolume(); return }
+    if (name === "deviceinfo") { showDeviceInfo(); return }
+    if (name === "touchtone") { pods.setTouchTone(!pods.touchTone); return }
+    if (name === "lowprompt") { pods.setLowBatteryPrompt(!pods.lowBatteryPrompt); return }
+    if (name === "volumetoggle") { pods.setHighVolumeLimit(!pods.limitHighVolume); return }
+    if (name.indexOf("volumedb:") === 0) { pods.setLimitDb(Number(name.substring(9))); return }
+    if (name.indexOf("volumerate:") === 0) { pods.setLimitRate(name.substring(11)); return }
+    if (name.indexOf("button:") === 0) { showGesture(name.substring(7)); return }
+    if (name.indexOf("buttonoption:") === 0) { pods.setButtonBinding(selectedGesture, name.substring(13)); return }
+    if (name === "resetbuttons") { confirmResetButtons(); return }
+    if (name.indexOf("power:") === 0) { pods.setAutoPowerOff(name.substring(6)); return }
     if (name === "dualtoggle") { pods.setDualConnections(!pods.dualConnections); return }
     if (name === "dualmanage") { manageHistory = !manageHistory; return }
     if (name.indexOf("currentdevice:") === 0) { pods.setDeviceConnection(name.substring(14), false); return }
@@ -177,6 +388,8 @@ Panel {
     if (name === "default") { selectDefault(); return }
     if (name === "spatial") { selectSpatial(); return }
     if (name === "custom") { pods.setCustomEqBands(pods.eqBands); return }
+    if (name === "eqexport") { pods.transferEq("export"); return }
+    if (name === "eqimport") { importEq(); return }
     if (name.indexOf("custom") === 0) { customEditor.activate(name); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "eqpreset") eqPresetDropdown.toggle()
@@ -185,6 +398,7 @@ Panel {
     else if (name.indexOf("transparency:") === 0) pods.setTransparencyMode(name.substring(13))
     else if (name.indexOf("soundfx:") === 0) pods.setSoundEffect(name.substring(8))
     else if (name === "windnoise") pods.setWindNoiseSuppression(!pods.windNoiseSuppression)
+    else if (name === "ldac") pods.setLdac(!pods.ldacEnabled)
     else if (name === "realtimeadaptive") pods.setRealTimeAdaptiveNoiseCanceling(!pods.realTimeAdaptiveNoiseCanceling)
     // "manuallevel" has no single activation — adjusted left/right instead, see onMoveRequested.
   }
@@ -194,6 +408,7 @@ Panel {
     if (at < 0) return
     cursorActive = true
     cursorIndex = at
+    Qt.callLater(revealCursor)
   }
 
   function launchInstaller() {
@@ -201,13 +416,25 @@ Panel {
     pods.installCli()
   }
 
-  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing || pods.statusStale
+  function cycleSoundMode() {
+    if (!pods.hasEarbuds || pods.statusStale || pods.updating) return
+    var index = Model.MODES.indexOf(pods.ancMode)
+    pods.setAncMode(Model.MODES[(index + 1) % Model.MODES.length])
+  }
+
+  visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing || pods.statusStale || pods.availableDevices.length > 0
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: if (opened) {
     effectsView = false
     dualView = false
+    settingsView = false
+    settingsDetail = ""
+    buttonsView = false
+    selectedGesture = ""
+    resetButtonsArmed = false
+    importEqArmed = false
     manageHistory = false
     cursorActive = false
     cursorIndex = 0
@@ -220,6 +447,7 @@ Panel {
     id: pods
     settings: root.settings
     liveUpdates: root.opened && root.dualView
+    panelOpen: root.opened
     onHasEarbudsChanged: if (!hasEarbuds) root.showEffects(false)
   }
 
@@ -237,17 +465,35 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
+    slotSize: root.barBatteryVisible ? Style.space(64) : Style.bar.iconSlot
+    opticalSize: slotSize
+    tooltipText: pods.hasEarbuds
+      ? pods.deviceName + " · " + (root.barBatteryLevel === Model.LEVEL_UNKNOWN ? "Battery unknown" : root.barBatteryLevel + "% battery") + " · Right click to change mode"
+      : "Omacore"
     iconComponent: Component {
       Item {
-        SoundcoreIcon {
+        Row {
           anchors.centerIn: parent
-          iconSize: Style.space(12)
-          color: root.barIconColor
+          spacing: Style.space(4)
+          SoundcoreIcon {
+            anchors.verticalCenter: parent.verticalCenter
+            iconSize: Style.space(12)
+            color: root.barIconColor
+          }
+          Text {
+            visible: root.barBatteryVisible
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.barBatteryLevel + "%"
+            color: root.barIconColor
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
         }
       }
     }
     onPressed: function (buttonCode) {
-      root.toggle()
+      if (buttonCode === Qt.RightButton) root.cycleSoundMode()
+      else root.toggle()
     }
   }
 
@@ -264,7 +510,7 @@ Panel {
     // fittedContentHeight still further clamps this to available screen space,
     // so this is a ceiling, not a fixed size — the Flickable below scrolls
     // anything still taller than that (e.g. Multi-Scene expanded to the max).
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(640))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(700))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -272,7 +518,7 @@ Panel {
       // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
       // handling) — without this our own Keys.priority: BeforeItem would
       // swallow them first and the popup's list would never scroll or close.
-    blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen || eqPresetDropdown.popupOpen || customEditor.popupOpen || customEditor.inputFocused
+    blocked: deviceDropdown.popupOpen || ncModeDropdown.popupOpen || registerModelDropdown.popupOpen || eqPresetDropdown.popupOpen || customEditor.popupOpen || customEditor.inputFocused
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         if (root.cursorRow.indexOf("eqband:") === 0 && dx !== 0) {
@@ -286,13 +532,13 @@ Panel {
         if (dy !== 0) root.moveCursor(dy)
       }
       onActivateRequested: if (root.cursorActive) root.activateCursor()
-      onCloseRequested: root.effectsView ? root.showEffects(false) : root.dualView ? root.showDual(false) : root.close()
+      onCloseRequested: root.goBack()
       onTabRequested: function (direction) { root.switchPanel(direction) }
       onTextKey: function (t) {
         var key = String(t).toLowerCase()
         if (key === "r") pods.refresh()
         else if (key === "i" && pods.cliMissing && !pods.cliInstalling) launchInstaller()
-        else if (!pods.hasEarbuds || root.effectsView || root.dualView) return
+        else if (!pods.hasEarbuds || !root.mainView) return
         else if (key === "n") pods.setAncMode(Model.MODE_NOISE_CANCELING)
         else if (key === "t") pods.setAncMode(Model.MODE_TRANSPARENCY)
         else if (key === "o") pods.setAncMode(Model.MODE_NORMAL)
@@ -317,7 +563,7 @@ Panel {
 
           PanelHero {
             id: hero
-            visible: !root.effectsView && !root.dualView
+            visible: root.mainView
             width: parent.width
             title: pods.cliMissing ? "OpenSCQ30 CLI required" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
@@ -333,6 +579,40 @@ Panel {
               SoundcoreIcon {
                 iconSize: Style.font.display
                 color: pods.hasEarbuds ? root.foreground : root.dim
+              }
+            }
+          }
+
+          RowLayout {
+            visible: root.devicePickerVisible
+            width: parent.width
+            spacing: Style.space(8)
+
+            Text {
+              text: "Device"
+              color: root.foreground
+              opacity: 0.75
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              Layout.preferredWidth: Style.space(50)
+            }
+
+            Dropdown {
+              id: deviceDropdown
+              Layout.fillWidth: true
+              showLabel: false
+              value: root.devicePickerValue
+              options: root.deviceOptions
+              enabled: !pods.busy && !pods.updating && !pods.choosingDevice
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              hasCursor: root.rowHasCursor("device")
+              onChanged: function (v) { pods.chooseDevice(v) }
+              onHovered: function (h) { if (h) root.focusRow("device") }
+              Binding {
+                target: deviceDropdown
+                property: "value"
+                value: root.devicePickerValue
               }
             }
           }
@@ -448,7 +728,7 @@ Panel {
           }
 
           Column {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds
+            visible: root.mainView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(10)
 
@@ -469,12 +749,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds
+            visible: root.mainView && pods.hasEarbuds
             foreground: root.foreground
           }
 
           Column {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds
+            visible: root.mainView && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(10)
 
@@ -500,16 +780,27 @@ Panel {
                 }
               }
 
+              Text {
+                width: parent.width
+                text: "n ANC · t Transparency · o Normal" +
+                  (root.ncSectionVisible && pods.windNoiseSuppressionSupported ? " · w Wind" : "") +
+                  "\nr Refresh · Tab Next panel"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+
             }
           }
 
           PanelSeparator {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.ncSectionVisible
+            visible: root.mainView && pods.hasEarbuds && root.ncSectionVisible
             foreground: root.foreground
           }
 
           Column {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.ncSectionVisible
+            visible: root.mainView && pods.hasEarbuds && root.ncSectionVisible
             width: parent.width
             spacing: Style.space(10)
 
@@ -621,12 +912,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.transparencySectionVisible
+            visible: root.mainView && pods.hasEarbuds && root.transparencySectionVisible
             foreground: root.foreground
           }
 
           Column {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.transparencySectionVisible
+            visible: root.mainView && pods.hasEarbuds && root.transparencySectionVisible
             width: parent.width
             spacing: Style.space(10)
 
@@ -655,12 +946,12 @@ Panel {
           }
 
           PanelSeparator {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.hasSoundEffects
+            visible: root.mainView && pods.hasEarbuds && root.hasSoundEffects
             foreground: root.foreground
           }
 
           NavigationRow {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && root.hasSoundEffects
+            visible: root.mainView && pods.hasEarbuds && root.hasSoundEffects
             width: parent.width
             rowName: "effects"
             title: "Sound Effects"
@@ -669,12 +960,86 @@ Panel {
           }
 
           PanelSeparator {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && pods.dualConnectionsSupported
+            visible: root.mainView && pods.hasEarbuds && pods.ldacSupported
+            foreground: root.foreground
+          }
+
+          Column {
+            visible: root.mainView && pods.hasEarbuds && pods.ldacSupported
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSectionHeader {
+              text: "AUDIO CODEC"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            ToggleRow {
+              width: parent.width
+              rowName: "ldac"
+              label: "LDAC on earbuds"
+              on: pods.ldacEnabled
+              onActivated: pods.setLdac(!pods.ldacEnabled)
+            }
+
+            Text {
+              visible: pods.spatialAudio && !pods.ldacEnabled
+              width: parent.width
+              text: "Turning on LDAC turns off Spatial Audio."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              width: parent.width
+              text: "Computer playback · " + Model.codecLabel(pods.hostCodec)
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+          }
+
+          PanelSeparator {
+            visible: root.mainView && pods.hasEarbuds && ((pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0) || pods.limitHighVolumeSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || root.deviceInfoRows.length > 0)
             foreground: root.foreground
           }
 
           NavigationRow {
-            visible: !root.effectsView && !root.dualView && pods.hasEarbuds && pods.dualConnectionsSupported
+            visible: root.mainView && pods.hasEarbuds && ((pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0) || pods.limitHighVolumeSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || root.deviceInfoRows.length > 0)
+            width: parent.width
+            rowName: "settings"
+            title: "Device Settings"
+            subtitle: pods.autoPowerOffSupported
+              ? "Auto Power-Off · " + Model.optionLabel(pods.autoPowerOffOptions, pods.autoPowerOff)
+              : "High-Volume Limit · " + (pods.limitHighVolume ? "On" : "Off")
+            onActivated: root.showSettings(true)
+          }
+
+          PanelSeparator {
+            visible: root.mainView && pods.hasEarbuds && pods.hasButtonControls
+            foreground: root.foreground
+          }
+
+          NavigationRow {
+            visible: root.mainView && pods.hasEarbuds && pods.hasButtonControls
+            width: parent.width
+            rowName: "buttons"
+            title: "Button Controls"
+            subtitle: "Customize left and right presses"
+            onActivated: root.showButtons(true)
+          }
+
+          PanelSeparator {
+            visible: root.mainView && pods.hasEarbuds && pods.dualConnectionsSupported
+            foreground: root.foreground
+          }
+
+          NavigationRow {
+            visible: root.mainView && pods.hasEarbuds && pods.dualConnectionsSupported
             width: parent.width
             rowName: "dual"
             title: "Dual Connections"
@@ -683,7 +1048,7 @@ Panel {
           }
 
           Column {
-            visible: (root.effectsView || root.dualView) && pods.hasEarbuds
+            visible: (root.effectsView || root.dualView || root.settingsView || root.buttonsView) && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(12)
 
@@ -720,7 +1085,8 @@ Panel {
                 }
                 Text {
                   Layout.alignment: Qt.AlignVCenter
-              text: "Back to earbuds"
+                  text: root.buttonsView && root.selectedGesture !== "" ? "Back to button controls"
+                    : root.settingsView && root.settingsDetail !== "" ? "Back to device settings" : "Back to earbuds"
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -731,7 +1097,247 @@ Panel {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onEntered: root.focusRow("back")
-                onClicked: root.dualView ? root.showDual(false) : root.showEffects(false)
+                onClicked: root.goBack()
+              }
+            }
+
+            Column {
+              visible: root.settingsView && root.settingsDetail === ""
+              width: parent.width
+              spacing: Style.space(10)
+
+              PanelSectionHeader {
+                visible: pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0
+                text: "AUTO POWER-OFF"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Text {
+                visible: pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0
+                width: parent.width
+                text: "Choose when the earbuds turn off automatically."
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+
+              Repeater {
+                model: pods.autoPowerOffSupported ? pods.autoPowerOffOptions : []
+                OptionRow {
+                  required property var modelData
+                  width: parent.width
+                  rowName: "power:" + modelData.value
+                  label: modelData.label
+                  selected: pods.autoPowerOff === modelData.value
+                  onActivated: pods.setAutoPowerOff(modelData.value)
+                }
+              }
+
+              PanelSectionHeader {
+                visible: pods.touchToneSupported || pods.lowBatteryPromptSupported
+                text: "PREFERENCES"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              ToggleRow {
+                visible: pods.touchToneSupported
+                width: parent.width
+                rowName: "touchtone"
+                label: "Touch tones"
+                fullRow: true
+                on: pods.touchTone
+                onActivated: pods.setTouchTone(!pods.touchTone)
+              }
+
+              ToggleRow {
+                visible: pods.lowBatteryPromptSupported
+                width: parent.width
+                rowName: "lowprompt"
+                label: "Low-battery prompt"
+                fullRow: true
+                on: pods.lowBatteryPrompt
+                onActivated: pods.setLowBatteryPrompt(!pods.lowBatteryPrompt)
+              }
+
+              PanelSeparator {
+                visible: pods.limitHighVolumeSupported && pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0
+                foreground: root.foreground
+              }
+
+              NavigationRow {
+                visible: pods.limitHighVolumeSupported
+                width: parent.width
+                rowName: "volumesettings"
+                title: "High-Volume Limit"
+                subtitle: pods.limitHighVolume ? "On · " + pods.limitDb + " dB" : "Off"
+                onActivated: root.showHighVolume()
+              }
+
+              NavigationRow {
+                visible: root.deviceInfoRows.length > 0
+                width: parent.width
+                rowName: "deviceinfo"
+                title: "Device Information"
+                subtitle: pods.deviceModel
+                onActivated: root.showDeviceInfo()
+              }
+            }
+
+            Column {
+              visible: root.settingsView && root.settingsDetail === "info"
+              width: parent.width
+              spacing: Style.space(10)
+              PanelSectionHeader {
+                text: "DEVICE INFORMATION"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+              Repeater {
+                model: root.deviceInfoRows
+                Column {
+                  required property var modelData
+                  width: parent.width
+                  spacing: Style.space(2)
+                  Text { text: modelData.label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+                  Text { width: parent.width; text: modelData.value; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAnywhere }
+                }
+              }
+            }
+
+            Column {
+              visible: root.settingsView && root.settingsDetail === "volume" && pods.limitHighVolumeSupported
+              width: parent.width
+              spacing: Style.space(10)
+
+              PanelSectionHeader {
+                text: "HIGH-VOLUME LIMIT"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              ToggleRow {
+                width: parent.width
+                rowName: "volumetoggle"
+                label: "Limit volume"
+                fullRow: true
+                on: pods.limitHighVolume
+                onActivated: pods.setHighVolumeLimit(!pods.limitHighVolume)
+              }
+
+              PanelSectionHeader {
+                visible: pods.limitDbOptions.length > 0
+                text: "THRESHOLD"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Repeater {
+                model: pods.limitDbOptions
+                OptionRow {
+                  required property var modelData
+                  width: parent.width
+                  rowName: "volumedb:" + modelData.value
+                  label: modelData.label
+                  selected: pods.limitDb === modelData.value
+                  onActivated: pods.setLimitDb(modelData.value)
+                }
+              }
+
+              PanelSectionHeader {
+                visible: pods.limitRateOptions.length > 0
+                text: "REFRESH RATE"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Repeater {
+                model: pods.limitRateOptions
+                OptionRow {
+                  required property var modelData
+                  width: parent.width
+                  rowName: "volumerate:" + modelData.value
+                  label: modelData.label
+                  selected: pods.limitRate === modelData.value
+                  onActivated: pods.setLimitRate(modelData.value)
+                }
+              }
+            }
+
+            Column {
+              visible: root.buttonsView && root.selectedGesture === "" && pods.hasButtonControls
+              width: parent.width
+              spacing: Style.space(12)
+
+              PanelSectionHeader {
+                text: "BUTTON CONTROLS"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Repeater {
+                model: ["Left", "Right"]
+                Column {
+                  id: sideGroup
+                  required property string modelData
+                  width: parent.width
+                  spacing: Style.space(7)
+
+                  PanelSectionHeader {
+                    text: sideGroup.modelData.toUpperCase() + " EARBUD"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                  }
+
+                  Repeater {
+                    model: Model.BUTTON_GESTURES.filter(function (gesture) {
+                      return gesture.side === sideGroup.modelData && (pods.buttonOptions[gesture.id] || []).length > 0
+                    })
+                    NavigationRow {
+                      required property var modelData
+                      width: parent.width
+                      rowName: "button:" + modelData.id
+                      title: modelData.label
+                      subtitle: Model.optionLabel(pods.buttonOptions[modelData.id] || [], pods.buttonBindings[modelData.id] || "")
+                      onActivated: root.showGesture(modelData.id)
+                    }
+                  }
+                }
+              }
+
+              NavigationRow {
+                visible: pods.buttonResetSupported
+                width: parent.width
+                rowName: "resetbuttons"
+                title: root.resetButtonsArmed ? "Confirm reset" : "Reset to defaults"
+                subtitle: root.resetButtonsArmed ? "Replace every custom button action" : "Restore the earbuds' original controls"
+                onActivated: root.confirmResetButtons()
+              }
+            }
+
+            Column {
+              visible: root.buttonsView && root.selectedGesture !== ""
+              width: parent.width
+              spacing: Style.space(10)
+
+              PanelSectionHeader {
+                text: (root.selectedGestureInfo.side + " " + root.selectedGestureInfo.label).toUpperCase()
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+
+              Repeater {
+                model: pods.buttonOptions[root.selectedGesture] || []
+                OptionRow {
+                  required property var modelData
+                  width: parent.width
+                  rowName: "buttonoption:" + modelData.value
+                  label: modelData.label
+                  selected: (pods.buttonBindings[root.selectedGesture] || "") === modelData.value
+                  onActivated: pods.setButtonBinding(root.selectedGesture, modelData.value)
+                }
               }
             }
 
@@ -920,6 +1526,45 @@ Panel {
                 if (y < panelFlick.contentY) panelFlick.contentY = y
                 else if (y + item.height > panelFlick.contentY + panelFlick.height)
                   panelFlick.contentY = Math.max(0, y + item.height - panelFlick.height)
+              }
+            }
+
+            Column {
+              visible: root.effectsView && pods.eqTransferSupported
+              width: parent.width
+              spacing: Style.space(8)
+              PanelSectionHeader {
+                text: "PRESET TRANSFER"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
+              Button {
+                visible: pods.customEqOptions.length > 0
+                text: "Copy saved presets"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                hasCursor: root.rowHasCursor("eqexport")
+                enabled: !pods.busy
+                onClicked: pods.transferEq("export")
+                onHovered: function (h) { if (h) root.focusRow("eqexport") }
+              }
+              Button {
+                text: root.importEqArmed ? "Confirm import from clipboard" : "Import from clipboard"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                hasCursor: root.rowHasCursor("eqimport")
+                enabled: !pods.busy
+                onClicked: root.importEq()
+                onHovered: function (h) { if (h) root.focusRow("eqimport") }
+              }
+              Text {
+                visible: root.importEqArmed
+                width: parent.width
+                text: "Importing replaces saved presets with matching names. Click again to confirm."
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
               }
             }
 

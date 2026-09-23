@@ -1,7 +1,7 @@
 <h1 align="center">Omacore</h1>
 
 <p align="center">
-  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, Sound Effects and EQ presets, drawn in Omarchy's own panel idiom.
+  Soundcore earbuds in the <a href="https://omarchy.org">Omarchy</a> bar: battery for each earbud and the case, ambient sound mode (Noise Cancelling / Transparency / Normal) with its own per-mode ANC settings, Sound Effects, EQ presets, button controls, LDAC status, and device settings, drawn in Omarchy's own panel idiom.
 </p>
 
 <p align="center">
@@ -9,13 +9,23 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/omacore.png" alt="Omacore panel showing the Soundcore R60i NC battery, sound mode, ANC settings and sound effects from the Omarchy bar" width="360">
+  <img src="screenshots/omacore.png" alt="Current Omacore panel showing earbud battery, sound mode, ANC controls, Sound Effects and Dual Connections" width="340">
 </p>
 
 ## How it looks
 
 Click the Omacore icon (right side of the bar) to open the panel above —
 see **What it shows** below for what's in it.
+
+When a device is preferred or multiple Soundcore devices are connected, the
+panel adds a [Device picker](screenshots/device-picker.png). Choosing
+**Automatic** clears the preference.
+The [Device Settings page](screenshots/device-settings.png) shows supported
+Auto Power-Off choices, preferences, and links to the [High-Volume Limit controls](screenshots/volume-limit.png).
+The [Sound Effects page](screenshots/eq-transfer.png) includes EQ preset transfer.
+The [Button Controls page](screenshots/button-controls.png) shows the current
+left and right gestures; [select a gesture](screenshots/button-action.png) to
+see only actions supported for that press.
 
 ## Install
 
@@ -27,8 +37,9 @@ the stock Bluetooth panel) and registered with OpenSCQ30 (step 2 of
 omarchy plugin add https://github.com/birajdotdev/omacore.git --enable
 ```
 
-That's it. The widget auto-detects whichever Soundcore device is currently
-connected over Bluetooth — no MAC address to configure.
+That's it. The widget auto-detects the first connected Soundcore device. If
+more than one is connected, the panel shows a Device picker. Picking one saves
+it as the preferred device; Automatic follows the first connected device.
 
 If `openscq30` isn't on `PATH` yet, the bar icon shows in the alert color and
 the panel offers an **Install OpenSCQ30 CLI** button (or press `i`). Installation
@@ -48,10 +59,16 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
 
 - **Which earbuds** — the panel title shows the friendly Bluetooth device
   name (e.g. "Soundcore R60i NC") that the discovery script finds, not a
-  generic "Soundcore".
+  generic "Soundcore". With multiple connected Soundcore devices, a Device
+  picker switches between them and saves the choice in Omarchy's widget
+  settings. The picker also stays available when the preferred device is away
+  but another registered Soundcore device is connected.
 - **Battery** for the left earbud, the right earbud and the case. Soundcore's
   hardware only reports ten discrete steps, so the widget shows a rounded
-  percent rather than a raw sensor value.
+  percent rather than a raw sensor value. By default the bar also shows the
+  lowest known earbud percentage (or the case percentage when neither bud
+  reports one) on a horizontal bar; `showBatteryPercent` can hide it. A low
+  reading colors the bar indicator with the theme's alert color.
 - **Sound mode** — Noise Cancellation, Transparency or Normal — with the
   active mode checked, and one click or `n`/`t`/`o` to switch it. Selecting a
   mode reveals that mode's own settings below it, mirroring Soundcore's app:
@@ -64,7 +81,8 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
     - **Wind noise suppression** — a toggle, one click or `w` (while in
       Noise Cancellation) to flip it.
   - **Transparency** shows a Fully Transparent / Vocal Mode picker.
-  - **Normal** shows none of the above — only Sound Effects, below.
+  - **Normal** shows none of the ANC controls; Sound Effects and other supported
+    device settings remain below.
 - **Sound Effects** — one row on the main panel shows the active selection.
   Open it for a dedicated view with three choices:
   - **Default**: choose a built-in EQ preset using the device's own labels.
@@ -77,21 +95,54 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
     eight bands, 100 Hz–12.8 kHz). Dragging applies on release; left/right on
     a focused band adjusts by 1 dB. Presets are saved in OpenSCQ30's database
     and survive shell restarts. An existing name shows **Update preset**.
+  - **Preset transfer**: copy all saved EQ presets as OpenSCQ30 JSON to the
+    clipboard, or import JSON from the clipboard. Import requires a second
+    click because matching preset names are replaced. The plugin validates
+    the current model's band count and gain range before sending the import.
   The back arrow or `esc` returns to the main panel. Opening the panel starts
   on the main view. Only features reported by the device are shown.
+- **Audio codec** — when OpenSCQ30 reports an LDAC toggle, the main panel
+  shows **LDAC on earbuds** and the codec negotiated by the computer's
+  Bluetooth playback sink (for example, AAC or LDAC). The earbud setting and
+  the computer's codec are separate: enabling LDAC on the earbuds does not
+  force PipeWire to select it. On devices that expose both LDAC and Spatial
+  Audio, enabling either turns the other off; the panel explains this before
+  enabling LDAC. [Soundcore documents this restriction for the P31i/R60i NC](https://service.soundcore.com/uk/article-description/soundcore-P31i-R60i-NC-FAQ).
+  `omacore-ldac` checks fresh device sessions for up to 15 seconds during the
+  codec switch and restores the previous Spatial Audio mode if LDAC does not
+  stick. `omacore-codec` reads the computer's codec from
+  `pactl`, updating while the panel is open. It displays **Unavailable** if
+  the sink or `pactl` cannot provide a codec.
+- **Device Settings** — Auto Power-Off uses the choices and display labels
+  reported by the connected model. Choose Disabled or a supported timer to
+  control the earbuds' automatic power-off delay. On the R60i NC, the
+  available timers are 10, 20, 30, and 60 minutes. When supported, the
+  High-Volume Limit page provides an on/off switch, the device's threshold
+  choices, and its refresh-rate choices. The R60i NC reports 75–100 dB in
+  5 dB steps and Real Time / 10 seconds / 1 minute refresh rates. The page
+  also controls touch tones and the low-battery prompt, and shows firmware,
+  serial number, connection, host earbud, and ANC diagnostics reported by
+  OpenSCQ30.
+- **Button Controls** — remap the left and right earbuds' single, double,
+  triple, and long presses. Each gesture shows its current action and the
+  choices reported by OpenSCQ30; **Disabled** removes an assignment. A
+  two-click **Reset to defaults** restores every button to the earbuds'
+  factory mapping. The reset action appears only when the device reports it.
 - **Update feedback** — setting changes are queued in click order, without loading or success
   indicators. Only failures show a text message. Reads and writes do not
   overlap. A failed write cancels the remaining queue and refreshes device state.
 - **Connection feedback** — temporary read failures retain the last known
   values with a warning instead of generating a false disconnect alert.
 
-All of the above are only shown when openscq30 reports the setting at all
-(model and firmware dependent — confirmed present on the R60i NC / P31i).
-OpenSCQ30 exposes still more per-device settings (button remapping,
-dual connections, …) — run `openscq30 device -a <mac> list-settings --json`
-to see everything your earbuds support, and extend
-`Model.js`/`Service.qml`/`Panel.qml` the same way the rest is wired if you
-want more of it in the bar.
+Device controls appear only when OpenSCQ30 reports them for the connected
+model and firmware. On one R60i NC with firmware 03.89, OpenSCQ30 2.12.0
+reported LDAC as available, but writes did not persist: the earbuds advertised
+only SBC/AAC. Enabling LDAC once through **More Settings → Sound Mode →
+Preferred audio quality → LDAC** in the Soundcore Android app installed
+firmware 04.89. The plugin could then enable LDAC on Linux, and PipeWire
+negotiated LDAC after the earbuds reconnected. The panel waits for the codec
+switch and verifies a fresh readback before reporting success. If a different
+device still rejects LDAC, it restores the previous Spatial Audio setting.
 
 ## How it works
 
@@ -99,13 +150,15 @@ Unlike [omapods](https://github.com/thisisgm/omarchy-pods) (AirPods, which
 speaks Apple's own BLE protocol via a background daemon), there is no
 background daemon here. [OpenSCQ30](https://github.com/Oppzippy/OpenSCQ30)'s
 CLI opens a fresh Bluetooth connection on every invocation, so this widget
-**polls** — the bundled `omacore-status` script discovers whichever paired
-Soundcore device is currently connected over Bluetooth (cross-referencing
+**polls** — the bundled `omacore-status` script discovers the first matching
+paired Soundcore device currently connected over Bluetooth (cross-referencing
 `bluetoothctl devices Connected` with OpenSCQ30's `paired-devices list`),
 reads the device's capability schema via `list-settings --json`, then fetches
 the current value of every relevant setting. The wrapper script `omacore-set`
-writes a setting back. No MAC address needs to be configured anywhere —
-discovery is automatic on every poll.
+writes a setting back. Discovery runs on every poll; the panel picker sets
+`deviceMatch` when several Soundcore devices are connected.
+`omacore-codec` matches the local Bluetooth sink by MAC address and reads its
+negotiated codec without changing audio settings.
 
 ## Requirements
 
@@ -113,6 +166,9 @@ discovery is automatic on every poll.
   on `PATH`. It is free/open-source (GPL-3.0-or-later) and not written by or
   affiliated with this plugin's author — it just happens to be the CLI this
   widget shells out to.
+
+- `pactl` for the computer's playback codec indicator. The earbud controls
+  still work if it is absent; the codec indicator shows **Unavailable**.
 
   If it's missing, use the explicit install action described above. The
   `omacore-install` script downloads **Oppzippy/OpenSCQ30 v2.12.0** from its
@@ -173,7 +229,8 @@ model, separate from BlueZ's pairing):
    written down here.
 
 Once the device is paired and `openscq30 paired-devices add`-registered, the
-widget finds it automatically whenever it's connected over Bluetooth.
+widget finds it automatically whenever it's connected over Bluetooth. If more
+than one is connected, choose one from the panel's Device picker.
 
 ## Update / Remove
 
@@ -208,20 +265,25 @@ own `j`/`k`/`↓`/`↑` and `enter` pick an option and `esc` closes it without
 closing the panel. For a toggle row (wind noise suppression, real-time
 adaptive ANC), a mouse click only registers on the switch itself, not the
 row's label — keyboard `enter`/`space` on the row still works either way.
+The Device picker uses the same dropdown keys.
 
-Left click opens the panel.
+Left click opens the panel. Right click cycles Noise Cancellation,
+Transparency and Normal while the device status is current. The main panel
+shows the mode and refresh shortcuts at its bottom.
 
 ## Settings
 
 | Setting | Default | Notes |
 |---------|---------|-------|
 | Poll interval (seconds) | 30 | How often the widget re-runs `omacore-status`. |
+| Preferred Soundcore device (`deviceMatch`) | empty | The panel picker writes the selected MAC address here. Empty uses the first connected registered Soundcore device. A case-insensitive name or MAC substring also works when set from the CLI: `omarchy bar set io.github.birajdotdev.omacore deviceMatch 'R60i NC'`. |
+| Show battery percentage in the bar (`showBatteryPercent`) | on | Shows the lowest known earbud battery, falling back to the case. Set it off with `omarchy bar set io.github.birajdotdev.omacore showBatteryPercent false --json`. |
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is fixable — a missing `openscq30` CLI, or a device connected but not yet registered with OpenSCQ30 — so the install/register controls stay reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 
 ## Development checks
 
-Run `node tests/regression.cjs` from the project root. The tests cover model
+Run `node tests/regression.cjs` and `bash tests/test_eq_transfer.sh` from the project root. The tests cover model
 parsing, queued setting writes, transient read errors, numeric ANC settings,
 and custom EQ ranges, saved-profile commands, and value settling
 using fake CLI commands (no earbud settings are changed).

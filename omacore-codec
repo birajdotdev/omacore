@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Report the codec negotiated by PipeWire for this Bluetooth playback sink.
+# The Soundcore LDAC setting only controls what the earbuds allow; it does not
+# say which codec the computer is currently using.
+set -uo pipefail
+
+mac="${1:-}"
+if [[ ! "$mac" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]] || ! command -v pactl >/dev/null 2>&1; then
+  echo '{"codec":""}'
+  exit 0
+fi
+
+sinks=$(pactl -f json list sinks 2>/dev/null) || {
+  echo '{"codec":""}'
+  exit 0
+}
+
+jq -c --arg mac "$mac" '
+  [ .[]
+    | select((.properties["api.bluez5.address"] // "" | ascii_upcase) == ($mac | ascii_upcase))
+    | .properties["api.bluez5.codec"] // ""
+  ] | {codec:(.[0] // "")}
+' <<<"$sinks" 2>/dev/null || echo '{"codec":""}'
