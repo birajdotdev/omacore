@@ -37,6 +37,13 @@ Item {
   property bool statusStale: false
   property var eqOptions: []
   property string eqPreset: ""
+  property var eqSpec: null
+  property var eqBands: []
+  property var customEqOptions: []
+  property string customEqProfile: ""
+  property bool customEqProfilesSupported: false
+  readonly property bool customEqSupported: eqSpec !== null && eqBands.length === eqSpec.bandHz.length
+  readonly property bool customEqActive: customEqSupported && !spatialAudio && eqPreset === ""
   property var _actionQueue: []
   property int queuedActions: 0
   readonly property bool updating: actionProcess.running || queuedActions > 0
@@ -212,6 +219,12 @@ Item {
     deviceName = parsed.name || "Soundcore"
     deviceModel = parsed.model || ""
 
+    eqSpec = Model.eqSpecification(parsed.schema)
+    var bands = Model.normalizeEqBands((parsed.values || {})[Model.SETTING_EQ_BANDS], eqSpec)
+    eqBands = bands ? _settleValue("eqBands", bands) : []
+    customEqOptions = Model.selectOptions(parsed.schema, Model.SETTING_CUSTOM_EQ)
+    customEqProfilesSupported = Model.has(parsed.values || {}, Model.SETTING_CUSTOM_EQ)
+    customEqProfile = _settleValue("customEqProfile", String((parsed.values || {})[Model.SETTING_CUSTOM_EQ] || ""))
     eqOptions = Model.selectOptions(parsed.schema, Model.SETTING_EQ_PRESET)
     eqPreset = _settleValue("eqPreset", String((parsed.values || {})[Model.SETTING_EQ_PRESET] || ""))
     var status = Model.statusFromMap(parsed.values || {})
@@ -309,6 +322,55 @@ Item {
     _enqueue(command)
   }
 
+  function _customEqCommand() {
+    var command = [setScript, discoveredMac]
+    if (spatialAudioSupported) {
+      _beginWrite("spatialAudio", false)
+      command.push(Model.SETTING_SPATIAL_AUDIO + "=false")
+    }
+    _beginWrite("eqPreset", "")
+    return command
+  }
+
+  function setCustomEqBands(values) {
+    var bands = Model.normalizeEqBands(values, eqSpec)
+    if (!connected || !discoveredMac || !customEqSupported || !bands) return
+    var command = _customEqCommand()
+    _beginWrite("eqBands", bands)
+    _beginWrite("customEqProfile", "")
+    command.push(Model.SETTING_EQ_BANDS + "=" + bands.join(","))
+    _enqueue(command)
+  }
+
+  function setCustomEqBand(index, value) {
+    if (!Number.isInteger(index) || index < 0 || index >= eqBands.length) return
+    var bands = eqBands.slice()
+    bands[index] = value
+    setCustomEqBands(bands)
+  }
+
+  function loadCustomEqProfile(name) {
+    if (!connected || !discoveredMac || !customEqSupported ||
+        !customEqOptions.some(function (o) { return o.value === name })) return
+    var command = _customEqCommand()
+    _beginWrite("customEqProfile", name)
+    command.push(Model.SETTING_CUSTOM_EQ + "=" + Model.customProfileValue(name))
+    _enqueue(command)
+  }
+
+  function saveCustomEqProfile(name) {
+    name = String(name || "").trim()
+    var bands = Model.normalizeEqBands(eqBands, eqSpec)
+    if (!connected || !discoveredMac || !customEqSupported || !customEqProfilesSupported || !bands ||
+        !name || name.length > 64 || /[\x00-\x1f]/.test(name)) return false
+    var command = _customEqCommand()
+    _beginWrite("customEqProfile", name)
+    command.push(Model.SETTING_EQ_BANDS + "=" + bands.join(","))
+    command.push(Model.SETTING_CUSTOM_EQ + "=+" + name)
+    _enqueue(command)
+    return true
+  }
+
   function _noteDisconnected(message) {
     _clearWrites()
     if (connected) _notify("Soundcore earbuds disconnected", message, "normal")
@@ -384,7 +446,7 @@ Item {
 
   function _settleValue(propName, reported) {
     if (!(propName in _pendingWrites)) return reported
-    if (reported === _pendingWrites[propName]) {
+    if (JSON.stringify(reported) === JSON.stringify(_pendingWrites[propName])) {
       delete _pendingWrites[propName]
       if (Object.keys(_pendingWrites).length === 0) pendingSettleTimer.stop()
       return reported

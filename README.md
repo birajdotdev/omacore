@@ -66,14 +66,19 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
   - **Transparency** shows a Fully Transparent / Vocal Mode picker.
   - **Normal** shows none of the above — only Sound Effects, below.
 - **Sound Effects** — one row on the main panel shows the active selection.
-  Open it for a dedicated view with two choices:
+  Open it for a dedicated view with three choices:
   - **Default**: choose a built-in EQ preset using the device's own labels.
     Selecting Default or a preset turns spatial audio off.
   - **Spatial Audio**: Music / Movie / Gaming. Selecting a mode enables
     spatial audio; the EQ preset selector is hidden while it is active.
+  - **Custom EQ**: edit the device's supported frequency bands, reset to flat,
+    and save or load named presets. Custom EQ disables spatial audio. Bands,
+    gain limits, and precision come from the device schema (the R60i NC has
+    eight bands, 100 Hz–12.8 kHz). Dragging applies on release; left/right on
+    a focused band adjusts by 1 dB. Presets are saved in OpenSCQ30's database
+    and survive shell restarts. An existing name shows **Update preset**.
   The back arrow or `esc` returns to the main panel. Opening the panel starts
-  on the main view. Custom EQ editing is planned for a later release; an
-  existing custom EQ is displayed as “Custom EQ” without changing it.
+  on the main view. Only features reported by the device are shown.
 - **Update feedback** — setting changes are queued in click order, without loading or success
   indicators. Only failures show a text message. Reads and writes do not
   overlap. A failed write cancels the remaining queue and refreshes device state.
@@ -82,7 +87,7 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
 
 All of the above are only shown when openscq30 reports the setting at all
 (model and firmware dependent — confirmed present on the R60i NC / P31i).
-OpenSCQ30 exposes still more per-device settings (button remapping, custom EQ editing,
+OpenSCQ30 exposes still more per-device settings (button remapping,
 dual connections, …) — run `openscq30 device -a <mac> list-settings --json`
 to see everything your earbuds support, and extend
 `Model.js`/`Service.qml`/`Panel.qml` the same way the rest is wired if you
@@ -186,7 +191,7 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 | Key | Action |
 |-----|--------|
 | `j` / `k`, `↓` / `↑` | move between rows |
-| `←` / `→` | adjust the Manual ANC level, when it's the focused row |
+| `←` / `→` | adjust the focused Manual ANC level or Custom EQ band |
 | `enter` / `space` | activate the current row |
 | `n` | Noise Cancellation |
 | `t` | Transparency |
@@ -217,7 +222,8 @@ Left click opens the panel.
 ## Development checks
 
 Run `node tests/regression.cjs` from the project root. The tests cover model
-parsing, queued setting writes, transient read errors, and numeric ANC settings
+parsing, queued setting writes, transient read errors, numeric ANC settings,
+and custom EQ ranges, saved-profile commands, and value settling
 using fake CLI commands (no earbud settings are changed).
 
 ## Credits

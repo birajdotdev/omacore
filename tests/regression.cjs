@@ -58,6 +58,41 @@ ctx._noteDisconnected('Disconnected');
 assert.equal(ctx.connected,false);
 assert.equal(ctx.queuedActions,0);
 
+// Custom EQ: schema-derived units, full-band writes, saved profile commands.
+const eqSpec={bandHz:[100,200,400], fractionDigits:1, min:-120, max:134};
+assert.equal(model.eqSpecification([{settings:[{settingId:'volumeAdjustments',type:'equalizer',setting:eqSpec}]}]).max,134);
+assert.equal(model.eqSpecification([{settings:[{settingId:'volumeAdjustments',type:'equalizer',readOnly:true,setting:eqSpec}]}]),null);
+assert.equal(model.normalizeEqBands([1,2],eqSpec),null);
+assert.equal(model.normalizeEqBands([1,NaN,3],eqSpec),null);
+assert.equal(JSON.stringify(model.normalizeEqBands([-200,0.5,200],eqSpec)), '[-120,1,134]');
+assert.equal(model.frequencyLabel(12800),'12.8k');
+ctx.connected=true;
+ctx.discoveredMac='test-mac';
+ctx.customEqSupported=true;
+ctx.customEqProfilesSupported=true;
+ctx.eqSpec=eqSpec;
+ctx.eqBands=[0,0,0];
+ctx.customEqOptions=[{value:'+Bass'}];
+ctx.actionProcess.running=false;
+ctx.setCustomEqBand(1,25);
+assert.equal(ctx.actionProcess.command[2],'spatialAudio=false');
+assert.equal(ctx.actionProcess.command[3],'volumeAdjustments=0,25,0');
+assert.equal(ctx.eqPreset,'');
+assert.equal(ctx._settleValue('eqBands',[0,25,0]).join(','),'0,25,0');
+assert.equal('eqBands' in ctx._pendingWrites,false,'arrays settle by value');
+ctx.actionProcess.running=false;
+assert.equal(ctx.saveCustomEqProfile(' Evening '),true);
+assert.equal(ctx.actionProcess.command.at(-1),'customEqualizerProfile=+Evening');
+assert.equal(ctx.actionProcess.command.at(-2),'volumeAdjustments=0,25,0');
+assert.equal(ctx.saveCustomEqProfile('   '),false);
+ctx.actionProcess.running=false;
+ctx.loadCustomEqProfile('+Bass');
+assert.equal(ctx.actionProcess.command.at(-1),'customEqualizerProfile=\\+Bass');
+ctx.actionProcess.running=false;
+ctx.customEqSupported=false;
+ctx.setCustomEqBands([0,0,0]);
+assert.equal(ctx.actionProcess.running,false,'unsupported models must not receive custom writes');
+
 // Exercise discovery and errors with fake executables; no Bluetooth writes.
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'omacore-tests-'));
 try {
@@ -82,4 +117,4 @@ esac
     else assert.equal(status.readError,true,scenario);
   }
 } finally {fs.rmSync(dir,{recursive:true,force:true});}
-console.log('Regression checks passed: model, queued writes, read errors, numeric ANC settings.');
+console.log('Regression checks passed: model, queued writes, read errors, numeric ANC, custom EQ and saved presets.');

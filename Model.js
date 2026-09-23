@@ -250,3 +250,39 @@ function selectOptions(schema, id) {
   }
   return []
 }
+
+var SETTING_CUSTOM_EQ = "customEqualizerProfile"
+var SETTING_EQ_BANDS = "volumeAdjustments"
+
+function eqSpecification(schema) {
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      var entry = settings[j]
+      if (entry.settingId !== SETTING_EQ_BANDS || entry.type !== "equalizer" || entry.readOnly) continue
+      var spec = entry.setting || {}
+      if (!Array.isArray(spec.bandHz) || !spec.bandHz.length ||
+          !spec.bandHz.every(function (n) { return typeof n === "number" && isFinite(n) && n > 0 }) ||
+          typeof spec.min !== "number" || typeof spec.max !== "number" ||
+          !isFinite(spec.min) || !isFinite(spec.max) || spec.min >= spec.max ||
+          !Number.isInteger(spec.fractionDigits) || spec.fractionDigits < 0 || spec.fractionDigits > 4) return null
+      return spec
+    }
+  }
+  return null
+}
+
+function normalizeEqBands(values, spec) {
+  if (!spec || !Array.isArray(values) || values.length !== spec.bandHz.length) return null
+  if (!values.every(function (v) { return typeof v === "number" && isFinite(v) })) return null
+  return values.map(function (v) { return Math.max(spec.min, Math.min(spec.max, Math.round(v))) })
+}
+
+function frequencyLabel(hz) {
+  return hz >= 1000 ? String(hz / 1000) + "k" : String(hz)
+}
+
+// ModifiableSelect reserves + and - for creation/deletion; escape names on load.
+function customProfileValue(name) {
+  return /^[+\-\\]/.test(name) ? "\\" + name : name
+}

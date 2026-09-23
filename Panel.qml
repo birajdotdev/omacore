@@ -16,9 +16,10 @@ Panel {
   property int cursorIndex: 0
   property bool cursorActive: false
   property bool effectsView: false
-  readonly property bool hasSoundEffects: pods.eqOptions.length > 0 || (pods.spatialAudioSupported && pods.spatialAudioModeSupported)
+  readonly property bool hasSoundEffects: pods.customEqSupported || pods.eqOptions.length > 0 || (pods.spatialAudioSupported && pods.spatialAudioModeSupported)
   readonly property string effectsSummary: {
     if (pods.spatialAudio) return "Spatial Audio · " + Model.soundEffectLabel(pods.spatialAudioMode)
+    if (pods.customEqActive) return "Custom EQ" + (pods.customEqProfile ? " · " + pods.customEqProfile : "")
     for (var i = 0; i < pods.eqOptions.length; i++) {
       if (pods.eqOptions[i].value === pods.eqPreset) return "Default · " + pods.eqOptions[i].label
     }
@@ -28,6 +29,7 @@ Panel {
   function showEffects(show) {
     ncModeDropdown.close()
     eqPresetDropdown.close()
+    customEditor.closeEditors()
     effectsView = show
     cursorActive = false
     cursorIndex = 0
@@ -78,8 +80,14 @@ Panel {
       rows.push("back")
       if (pods.spatialAudioSupported && pods.spatialAudioModeSupported) rows.push("spatial")
       rows.push("default")
+      if (pods.customEqSupported) rows.push("custom")
       if (pods.spatialAudio) {
         for (var n = 0; n < Model.SPATIAL_EFFECTS.length; n++) rows.push("soundfx:" + Model.SPATIAL_EFFECTS[n])
+      } else if (pods.customEqActive) {
+        if (pods.customEqOptions.length) rows.push("customsaved")
+        for (var band = 0; band < pods.eqBands.length; band++) rows.push("eqband:" + band)
+        rows.push("customflat")
+        if (pods.customEqProfilesSupported) { rows.push("customname"); rows.push("customsave") }
       } else if (pods.eqOptions.length) rows.push("eqpreset")
       return rows
     }
@@ -126,6 +134,8 @@ Panel {
     if (name === "back") { showEffects(false); return }
     if (name === "default") { selectDefault(); return }
     if (name === "spatial") { selectSpatial(); return }
+    if (name === "custom") { pods.setCustomEqBands(pods.eqBands); return }
+    if (name.indexOf("custom") === 0) { customEditor.activate(name); return }
     if (name.indexOf("mode:") === 0) pods.setAncMode(name.substring(5))
     else if (name === "eqpreset") eqPresetDropdown.toggle()
     else if (name === "ncmode") ncModeDropdown.toggle()
@@ -216,9 +226,13 @@ Panel {
       // The dropdown owns keys while its popup is open (its own j/k/Enter/Esc
       // handling) — without this our own Keys.priority: BeforeItem would
       // swallow them first and the popup's list would never scroll or close.
-      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen || eqPresetDropdown.popupOpen
+      blocked: ncModeDropdown.popupOpen || registerModelDropdown.popupOpen || eqPresetDropdown.popupOpen || customEditor.popupOpen || customEditor.inputFocused
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
+        if (root.cursorRow.indexOf("eqband:") === 0 && dx !== 0) {
+          customEditor.adjust(Number(root.cursorRow.substring(7)), dx)
+          return
+        }
         if (root.cursorRow === "manuallevel" && dx !== 0) {
           pods.setManualNoiseCancelingLevel(pods.manualNoiseCancelingLevel + dx)
           return
@@ -683,15 +697,23 @@ Panel {
                 width: parent.width
                 rowName: "default"
                 label: "Default"
-                selected: !pods.spatialAudio
+                selected: !pods.spatialAudio && !pods.customEqActive
                 onActivated: root.selectDefault()
+              }
+              OptionRow {
+                visible: pods.customEqSupported
+                width: parent.width
+                rowName: "custom"
+                label: "Custom EQ"
+                selected: pods.customEqActive
+                onActivated: pods.setCustomEqBands(pods.eqBands)
               }
             }
 
             PanelSeparator { foreground: root.foreground }
 
             Column {
-              visible: !pods.spatialAudio && pods.eqOptions.length > 0
+              visible: !pods.spatialAudio && !pods.customEqActive && pods.eqOptions.length > 0
               width: parent.width
               spacing: Style.space(10)
               PanelSectionHeader {
@@ -720,6 +742,25 @@ Panel {
                   }
                 }
 
+              }
+            }
+
+            CustomEqEditor {
+              id: customEditor
+              visible: pods.customEqActive
+              width: parent.width
+              service: pods
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              cursorRow: root.cursorActive ? root.cursorRow : ""
+              onFocusRowRequested: function (name) { root.focusRow(name) }
+              onReleaseFocus: keyCatcher.forceActiveFocus()
+              onRevealItem: function (item) {
+                if (!item || !root.effectsView || !visible) return
+                var y = item.mapToItem(column, 0, 0).y
+                if (y < panelFlick.contentY) panelFlick.contentY = y
+                else if (y + item.height > panelFlick.contentY + panelFlick.height)
+                  panelFlick.contentY = Math.max(0, y + item.height - panelFlick.height)
               }
             }
 
