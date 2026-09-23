@@ -7,6 +7,8 @@ Item {
   id: root
 
   property var settings: ({})
+  property bool liveUpdates: false
+  onLiveUpdatesChanged: if (liveUpdates) refresh()
 
   property bool connected: false
   property string ancMode: ""
@@ -33,6 +35,12 @@ Item {
   property bool spatialAudioModeSupported: false
   property string spatialAudioMode: ""
   readonly property string soundEffect: spatialAudio ? spatialAudioMode : Model.SOUND_EFFECT_OFF
+  property bool dualConnectionsSupported: false
+  property bool dualConnections: false
+  property bool dualConnectionsDevicesSupported: false
+  property var dualConnectionsDevices: []
+  property var dualConnectionsOptions: []
+  readonly property bool individualConnectionsSupported: deviceModel === "SoundcoreD1202" || deviceModel === "SoundcoreD1202C"
 
   property bool statusStale: false
   property var eqOptions: []
@@ -267,6 +275,13 @@ Item {
     spatialAudioModeSupported = status.spatialAudioModeSupported
     spatialAudioMode = status.spatialAudioModeSupported
       ? _settleValue("spatialAudioMode", status.spatialAudioMode) : ""
+    dualConnectionsSupported = status.dualConnectionsSupported
+    dualConnections = status.dualConnectionsSupported
+      ? _settleValue("dualConnections", status.dualConnections) : false
+    dualConnectionsDevicesSupported = status.dualConnectionsDevicesSupported
+    dualConnectionsDevices = status.dualConnectionsDevicesSupported
+      ? _settleValue("dualConnectionsDevices", status.dualConnectionsDevices) : []
+    dualConnectionsOptions = _settleValue("dualConnectionsOptions", Model.selectOptions(parsed.schema, Model.SETTING_DUAL_CONNECTIONS_DEVICES))
 
     _checkLowBattery("leftLowNotified", "Left earbud", leftLevel, leftCharging)
     _checkLowBattery("rightLowNotified", "Right earbud", rightLevel, rightCharging)
@@ -506,6 +521,36 @@ Item {
       Model.SETTING_SPATIAL_AUDIO_MODE + "=" + effect])
   }
 
+  function setDualConnections(enabled) {
+    if (!connected || !dualConnectionsSupported || discoveredMac === "") return
+    _beginWrite("dualConnections", enabled)
+    _enqueue([setScript, discoveredMac, Model.SETTING_DUAL_CONNECTIONS + "=" + (enabled ? "true" : "false")])
+  }
+
+  function setDeviceConnection(mac, enabled) {
+    if (!connected || !dualConnections || !individualConnectionsSupported || updating || statusStale ||
+        !dualConnectionsOptions.some(function (option) { return option.value === mac })) return
+    var devices = dualConnectionsDevices.slice()
+    var index = devices.indexOf(mac)
+    if ((index >= 0) === enabled) return
+    if (enabled && devices.length >= 2) {
+      actionStatus = "Disconnect one device before connecting another."
+      actionStatusTimer.restart()
+      return
+    }
+    if (enabled) devices.push(mac)
+    else devices.splice(index, 1)
+    _beginWrite("dualConnectionsDevices", devices)
+    _enqueue([pluginDir + "/omacore-connection", discoveredMac, deviceModel, mac, enabled ? "true" : "false"])
+  }
+
+  function removeDualConnectionsDevice(mac) {
+    if (!connected || updating || statusStale || !dualConnectionsDevicesSupported || discoveredMac === "" ||
+        dualConnectionsDevices.indexOf(mac) >= 0 || !dualConnectionsOptions.some(function (option) { return option.value === mac })) return
+    _beginWrite("dualConnectionsOptions", dualConnectionsOptions.filter(function (option) { return option.value !== mac }))
+    _enqueue([setScript, discoveredMac, Model.SETTING_DUAL_CONNECTIONS_DEVICES + "=-" + mac])
+  }
+
   Timer {
     id: actionWatchdog
     interval: 15000
@@ -514,7 +559,7 @@ Item {
 
   Timer {
     id: pollTimer
-    interval: root.pollIntervalSec * 1000
+    interval: root.liveUpdates ? 3000 : root.pollIntervalSec * 1000
     running: true
     repeat: true
     triggeredOnStart: true

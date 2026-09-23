@@ -16,6 +16,8 @@ var SETTING_MULTI_SCENE_NOISE_CANCELING = "multiSceneNoiseCanceling"
 var SETTING_REALTIME_ADAPTIVE_NOISE_CANCELING = "realTimeAdaptiveNoiseCanceling"
 var SETTING_SPATIAL_AUDIO = "spatialAudio"
 var SETTING_SPATIAL_AUDIO_MODE = "spatialAudioMode"
+var SETTING_DUAL_CONNECTIONS = "dualConnections"
+var SETTING_DUAL_CONNECTIONS_DEVICES = "dualConnectionsDevices"
 
 // AmbientSoundMode values — confirmed present on D1202/D1202C.
 var MODE_NOISE_CANCELING = "NoiseCanceling"
@@ -197,6 +199,12 @@ function statusFromMap(map) {
   status.spatialAudioModeSupported = has(map, SETTING_SPATIAL_AUDIO_MODE)
   status.spatialAudioMode = String(map[SETTING_SPATIAL_AUDIO_MODE] || "")
 
+  status.dualConnectionsSupported = has(map, SETTING_DUAL_CONNECTIONS)
+  status.dualConnections = boolFromToggle(map[SETTING_DUAL_CONNECTIONS])
+  status.dualConnectionsDevicesSupported = has(map, SETTING_DUAL_CONNECTIONS_DEVICES)
+  status.dualConnectionsDevices = Array.isArray(map[SETTING_DUAL_CONNECTIONS_DEVICES])
+    ? map[SETTING_DUAL_CONNECTIONS_DEVICES].slice() : []
+
   return status
 }
 
@@ -225,7 +233,11 @@ function defaultStatus() {
     spatialAudioSupported: false,
     spatialAudio: false,
     spatialAudioModeSupported: false,
-    spatialAudioMode: ""
+    spatialAudioMode: "",
+    dualConnectionsSupported: false,
+    dualConnections: false,
+    dualConnectionsDevicesSupported: false,
+    dualConnectionsDevices: []
   }
 }
 

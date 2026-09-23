@@ -100,12 +100,13 @@ fi
 schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud settings could not be read."
 jq -e 'type == "array" and length > 0' <<<"$schema_json" >/dev/null 2>&1 || read_error "No settings returned by the earbuds."
 
-filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")]' <<<"$schema_json")
+filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections")]' <<<"$schema_json")
 
 ids=$(jq -r '
-  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous")
+  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections")
        | .settings[] | select(.type=="select" or .type=="optionalSelect" or .type=="toggle"
-                                or .type=="equalizer" or .type=="information" or .type=="i32Range" or .type=="modifiableSelect")
+                                or .type=="equalizer" or .type=="information" or .type=="i32Range" or .type=="modifiableSelect"
+                                or .type=="multiSelectWithRemove")
        | .settingId]
   | unique | .[]
 ' <<<"$schema_json" 2>/dev/null)

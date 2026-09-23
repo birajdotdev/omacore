@@ -238,3 +238,21 @@ devices. This panel only shells out to its CLI and draws what comes back.
 MIT. See [LICENSE](LICENSE). This plugin vendors no OpenSCQ30 code — it only
 invokes the separately-installed `openscq30` binary, which is GPL-3.0-or-later
 under its own project.
+
+### Dual Connections device controls
+
+The Dual Connections page refreshes every three seconds while open. Current
+and History rows have individual connection switches on the P31i (D1202) and
+R60i NC (D1202C). With two devices connected, disconnect one before enabling
+another. Turning off the computer's own connection also disconnects Omacore
+until the earbuds reconnect. Manage replaces History switches with explicit
+Forget buttons; switching a device off does not forget it.
+
+`omacore-connection` uses the system `/usr/bin/python` and `python-gobject`
+(Gio/BlueZ) for these two models, working around the OpenSCQ30 2.12.0 CLI's
+multi-select parsing bug. Its wire commands follow the protocol implemented in
+OpenSCQ30's `common/packet/outbound/dual_connections.rs`. It reads the live device
+list before sending a command for one known host, and never replaces the other
+connection. Other models keep read-only connection status. General settings and
+Forget continue to use OpenSCQ30. Run helper checks with
+`/usr/bin/python tests/test_connection.py`; these do not access Bluetooth.
