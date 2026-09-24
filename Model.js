@@ -18,6 +18,24 @@ var SETTING_SPATIAL_AUDIO = "spatialAudio"
 var SETTING_SPATIAL_AUDIO_MODE = "spatialAudioMode"
 var SETTING_DUAL_CONNECTIONS = "dualConnections"
 var SETTING_DUAL_CONNECTIONS_DEVICES = "dualConnectionsDevices"
+var SETTING_LDAC = "ldac"
+var SETTING_AUTO_POWER_OFF = "autoPowerOff"
+var SETTING_TOUCH_TONE = "touchTone"
+var SETTING_LOW_BATTERY_PROMPT = "lowBatteryPrompt"
+var SETTING_LIMIT_HIGH_VOLUME = "limitHighVolume"
+var SETTING_LIMIT_HIGH_VOLUME_DB = "limitHighVolumeDbLimit"
+var SETTING_LIMIT_HIGH_VOLUME_RATE = "limitHighVolumeRefreshRate"
+var SETTING_RESET_BUTTONS = "resetButtonsToDefault"
+var BUTTON_GESTURES = [
+  { id: "leftSinglePress", side: "Left", label: "Single press" },
+  { id: "leftDoublePress", side: "Left", label: "Double press" },
+  { id: "leftTriplePress", side: "Left", label: "Triple press" },
+  { id: "leftLongPress", side: "Left", label: "Long press" },
+  { id: "rightSinglePress", side: "Right", label: "Single press" },
+  { id: "rightDoublePress", side: "Right", label: "Double press" },
+  { id: "rightTriplePress", side: "Right", label: "Triple press" },
+  { id: "rightLongPress", side: "Right", label: "Long press" }
+]
 
 // AmbientSoundMode values — confirmed present on D1202/D1202C.
 var MODE_NOISE_CANCELING = "NoiseCanceling"
@@ -49,6 +67,12 @@ var SOUND_EFFECT_GAMING = "Gaming"
 var SPATIAL_EFFECTS = [SOUND_EFFECT_MUSIC, SOUND_EFFECT_MOVIE, SOUND_EFFECT_GAMING]
 
 var LEVEL_UNKNOWN = -1
+
+function barBatteryLevel(left, right, caseLevel) {
+  var levels = [left, right].filter(function (level) { return level !== LEVEL_UNKNOWN && level >= 0 })
+  if (levels.length) return Math.min.apply(null, levels)
+  return caseLevel !== LEVEL_UNKNOWN && caseLevel >= 0 ? caseLevel : LEVEL_UNKNOWN
+}
 
 var MAX_ERROR_CHARS = 140
 var ELIDED_ERROR_CHARS = 137
@@ -94,6 +118,29 @@ function soundEffectLabel(effect) {
   if (effect === SOUND_EFFECT_MOVIE) return "Movie"
   if (effect === SOUND_EFFECT_GAMING) return "Gaming"
   return "Unknown"
+}
+
+function codecLabel(codec) {
+  var value = String(codec || "").toLowerCase()
+  if (value === "") return "Unavailable"
+  if (value === "sbc_xq") return "SBC XQ"
+  return value.replace(/[_-]/g, " ").toUpperCase()
+}
+
+function optionLabel(options, value) {
+  for (var i = 0; i < options.length; i++) {
+    if (options[i].value === value) return options[i].label
+  }
+  return value || "Unavailable"
+}
+
+function parseCodec(raw) {
+  try {
+    var parsed = JSON.parse(raw || "{}")
+    return typeof parsed.codec === "string" ? parsed.codec : ""
+  } catch (e) {
+    return ""
+  }
 }
 
 // --- Battery helpers ---
@@ -199,6 +246,24 @@ function statusFromMap(map) {
   status.spatialAudioModeSupported = has(map, SETTING_SPATIAL_AUDIO_MODE)
   status.spatialAudioMode = String(map[SETTING_SPATIAL_AUDIO_MODE] || "")
 
+  status.ldacSupported = has(map, SETTING_LDAC)
+  status.ldacEnabled = boolFromToggle(map[SETTING_LDAC])
+
+  status.autoPowerOffSupported = has(map, SETTING_AUTO_POWER_OFF)
+  status.autoPowerOff = String(map[SETTING_AUTO_POWER_OFF] || "")
+  status.touchToneSupported = has(map, SETTING_TOUCH_TONE)
+  status.touchTone = boolFromToggle(map[SETTING_TOUCH_TONE])
+  status.lowBatteryPromptSupported = has(map, SETTING_LOW_BATTERY_PROMPT)
+  status.lowBatteryPrompt = boolFromToggle(map[SETTING_LOW_BATTERY_PROMPT])
+
+  status.limitHighVolumeSupported = has(map, SETTING_LIMIT_HIGH_VOLUME)
+  status.limitHighVolume = boolFromToggle(map[SETTING_LIMIT_HIGH_VOLUME])
+  status.limitDbSupported = has(map, SETTING_LIMIT_HIGH_VOLUME_DB)
+  var limitDb = map[SETTING_LIMIT_HIGH_VOLUME_DB]
+  status.limitDb = status.limitDbSupported && typeof limitDb === "number" && isFinite(limitDb) && Math.round(limitDb) === limitDb ? limitDb : LEVEL_UNKNOWN
+  status.limitRateSupported = has(map, SETTING_LIMIT_HIGH_VOLUME_RATE)
+  status.limitRate = String(map[SETTING_LIMIT_HIGH_VOLUME_RATE] || "")
+
   status.dualConnectionsSupported = has(map, SETTING_DUAL_CONNECTIONS)
   status.dualConnections = boolFromToggle(map[SETTING_DUAL_CONNECTIONS])
   status.dualConnectionsDevicesSupported = has(map, SETTING_DUAL_CONNECTIONS_DEVICES)
@@ -234,6 +299,20 @@ function defaultStatus() {
     spatialAudio: false,
     spatialAudioModeSupported: false,
     spatialAudioMode: "",
+    ldacSupported: false,
+    ldacEnabled: false,
+    autoPowerOffSupported: false,
+    autoPowerOff: "",
+    touchToneSupported: false,
+    touchTone: false,
+    lowBatteryPromptSupported: false,
+    lowBatteryPrompt: false,
+    limitHighVolumeSupported: false,
+    limitHighVolume: false,
+    limitDbSupported: false,
+    limitDb: LEVEL_UNKNOWN,
+    limitRateSupported: false,
+    limitRate: "",
     dualConnectionsSupported: false,
     dualConnections: false,
     dualConnectionsDevicesSupported: false,
@@ -261,6 +340,68 @@ function selectOptions(schema, id) {
     }
   }
   return []
+}
+
+function integerRangeOptions(schema, id, suffix) {
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      var entry = settings[j]
+      if (entry.settingId !== id || entry.type !== "i32Range" || entry.readOnly) continue
+      var spec = entry.setting || {}
+      if (!Number.isInteger(spec.start) || !Number.isInteger(spec.end) || !Number.isInteger(spec.step) ||
+          spec.step <= 0 || spec.start > spec.end || (spec.end - spec.start) / spec.step > 100) return []
+      var options = []
+      for (var value = spec.start; value <= spec.end; value += spec.step)
+        options.push({ value: value, label: value + (suffix || "") })
+      return options
+    }
+  }
+  return []
+}
+
+function buttonOptions(schema, id) {
+  var known = BUTTON_GESTURES.some(function (gesture) { return gesture.id === id })
+  if (!known) return []
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      var entry = settings[j]
+      if (entry.settingId !== id || entry.type !== "optionalSelect" || entry.readOnly) continue
+      var options = selectOptions(schema, id)
+      return options.length ? [{ value: "", label: "Disabled" }].concat(options) : []
+    }
+  }
+  return []
+}
+
+function supportsAction(schema, id) {
+  for (var i = 0; i < (schema || []).length; i++) {
+    var settings = schema[i].settings || []
+    for (var j = 0; j < settings.length; j++) {
+      var entry = settings[j]
+      if (entry.settingId === id && entry.type === "action" && !entry.readOnly) return true
+    }
+  }
+  return false
+}
+
+function buttonSettings(schema, values) {
+  var bindings = {}
+  var options = {}
+  var map = values || {}
+  for (var i = 0; i < BUTTON_GESTURES.length; i++) {
+    var id = BUTTON_GESTURES[i].id
+    var choices = buttonOptions(schema, id)
+    if (!choices.length || !has(map, id)) continue
+    options[id] = choices
+    bindings[id] = String(map[id] || "")
+  }
+  return {
+    bindings: bindings,
+    options: options,
+    resetSupported: supportsAction(schema, SETTING_RESET_BUTTONS)
+  }
 }
 
 var SETTING_CUSTOM_EQ = "customEqualizerProfile"
@@ -297,4 +438,16 @@ function frequencyLabel(hz) {
 // ModifiableSelect reserves + and - for creation/deletion; escape names on load.
 function customProfileValue(name) {
   return /^[+\-\\]/.test(name) ? "\\" + name : name
+}
+
+// 0: icon, 1: lowest battery, 2: left/right/case.
+function batteryDisplayMode(value) {
+  var mode = Number(value)
+  return mode === 0 || mode === 1 || mode === 2 ? mode : 1
+}
+function barBatteryText(mode, left, right, caseLevel) {
+  function percent(level) { return level === LEVEL_UNKNOWN ? "—" : level + "%" }
+  if (mode === 0) return ""
+  if (mode === 2) return "L " + percent(left) + " · R " + percent(right) + " · C " + percent(caseLevel)
+  return percent(barBatteryLevel(left, right, caseLevel))
 }

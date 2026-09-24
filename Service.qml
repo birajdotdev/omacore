@@ -8,6 +8,7 @@ Item {
 
   property var settings: ({})
   property bool liveUpdates: false
+  property bool panelOpen: false
   onLiveUpdatesChanged: if (liveUpdates) refresh()
 
   property bool connected: false
@@ -34,6 +35,30 @@ Item {
   property bool spatialAudio: false
   property bool spatialAudioModeSupported: false
   property string spatialAudioMode: ""
+  property bool ldacSupported: false
+  property bool ldacEnabled: false
+  property bool autoPowerOffSupported: false
+  property string autoPowerOff: ""
+  property var autoPowerOffOptions: []
+  property bool touchToneSupported: false
+  property bool touchTone: false
+  property bool lowBatteryPromptSupported: false
+  property bool lowBatteryPrompt: false
+  property var deviceInfo: ({})
+  property bool limitHighVolumeSupported: false
+  property bool limitHighVolume: false
+  property bool limitDbSupported: false
+  property int limitDb: Model.LEVEL_UNKNOWN
+  property var limitDbOptions: []
+  property bool limitRateSupported: false
+  property string limitRate: ""
+  property var limitRateOptions: []
+  property var buttonBindings: ({})
+  property var buttonOptions: ({})
+  property bool buttonResetSupported: false
+  readonly property bool hasButtonControls: Object.keys(buttonOptions).length > 0
+  property string hostCodec: ""
+  property string codecRequestedMac: ""
   readonly property string soundEffect: spatialAudio ? spatialAudioMode : Model.SOUND_EFFECT_OFF
   property bool dualConnectionsSupported: false
   property bool dualConnections: false
@@ -50,13 +75,16 @@ Item {
   property var customEqOptions: []
   property string customEqProfile: ""
   property bool customEqProfilesSupported: false
+  property bool eqTransferSupported: false
   readonly property bool customEqSupported: eqSpec !== null && eqBands.length === eqSpec.bandHz.length
   readonly property bool customEqActive: customEqSupported && !spatialAudio && eqPreset === ""
   property var _actionQueue: []
   property int queuedActions: 0
-  readonly property bool updating: actionProcess.running || queuedActions > 0
+  readonly property bool updating: actionProcess.running || queuedActions > 0 || transferProcess.running
   property string lastError: ""
   property string actionStatus: ""
+  readonly property bool switchingCodec: actionProcess.running && actionProcess.command[0] === ldacScript
+  property bool actionStatusError: false
 
   // True when omacore-status couldn't find the OpenSCQ30 CLI on PATH. The
   // panel then offers an explicit install action instead of hiding silently.
@@ -78,11 +106,15 @@ Item {
   // (e.g. "Soundcore R60i NC"), used for the panel hero title.
   property string deviceName: "Soundcore"
   property string deviceModel: ""
+  property var availableDevices: []
   // The MAC address discovered by omacore-status, used for set commands.
   property string discoveredMac: ""
 
   readonly property int pollIntervalSec: intSetting("pollIntervalSec", 30, 10, 300)
-  readonly property bool busy: statusProcess.running || actionProcess.running
+  readonly property string deviceMatch: String(setting("deviceMatch", "")).trim()
+  onDeviceMatchChanged: refresh()
+  readonly property bool busy: statusProcess.running || actionProcess.running || transferProcess.running
+  readonly property bool choosingDevice: deviceChoiceProcess.running
   readonly property bool hasEarbuds: connected
 
   readonly property int lowBatteryPercent: 20
@@ -99,11 +131,14 @@ Item {
 
   property var _pendingWrites: ({})
   readonly property int settleHoldMs: 4000
-  readonly property int actionStatusMs: 2200
+  readonly property int actionStatusMs: 5000
 
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.birajdotdev.omacore"
   readonly property string statusScript: pluginDir + "/omacore-status"
   readonly property string setScript: pluginDir + "/omacore-set"
+  readonly property string codecScript: pluginDir + "/omacore-codec"
+  readonly property string ldacScript: pluginDir + "/omacore-ldac"
+  readonly property string eqTransferScript: pluginDir + "/omacore-eq-transfer"
   readonly property string installScript: pluginDir + "/omacore-install"
   readonly property string registerScript: pluginDir + "/omacore-register"
   readonly property string notificationIcon: pluginDir + "/soundcore-logo.svg"
@@ -126,10 +161,30 @@ Item {
   }
 
   function refresh() {
-    if (statusProcess.running || updating) return
-    statusProcess.command = [statusScript]
+    if (statusProcess.running || updating || deviceChoiceProcess.running) return
+    statusProcess.command = deviceMatch ? [statusScript, "--device-match", deviceMatch] : [statusScript]
     statusProcess.running = true
     pollWatchdog.restart()
+  }
+
+  function refreshCodec() {
+    if (!connected || discoveredMac === "" || codecProcess.running) return
+    codecRequestedMac = discoveredMac
+    codecProcess.command = [codecScript, discoveredMac]
+    codecProcess.running = true
+  }
+
+  function chooseDevice(mac) {
+    if (statusProcess.running || updating || deviceChoiceProcess.running) return
+    if (mac !== "" && !availableDevices.some(function (device) { return device.mac === mac })) return
+    if (mac === deviceMatch) return
+    _clearWrites()
+    connected = false
+    discoveredMac = ""
+    hostCodec = ""
+    lastError = "Switching Soundcore device…"
+    deviceChoiceProcess.command = ["omarchy", "bar", "set", "io.github.birajdotdev.omacore", "deviceMatch", mac]
+    deviceChoiceProcess.running = true
   }
 
   // Opens the bundled installer in Omarchy's centered floating terminal so
@@ -190,6 +245,7 @@ Item {
       return
     }
     statusStale = false
+    availableDevices = Array.isArray(parsed.devices) ? parsed.devices : []
     if (!parsed.connected) {
       var missing = parsed.cliMissing === true
       if (missing && !cliMissing) notifyDependencyMissing()
@@ -213,7 +269,7 @@ Item {
         unregisteredName = ""
         suggestedModel = ""
         registerModels = []
-        lastError = "No paired Soundcore device is connected."
+        lastError = parsed.preferredMissing ? "Preferred Soundcore device is not connected. Choose another below." : "No paired Soundcore device is connected."
       }
       return
     }
@@ -222,7 +278,13 @@ Item {
     registeredMissing = false
     registering = false
 
-    if (discoveredMac !== "" && discoveredMac !== parsed.mac) _clearWrites()
+    if (discoveredMac !== "" && discoveredMac !== parsed.mac) {
+      _clearWrites()
+      hostCodec = ""
+      leftLowNotified = false
+      rightLowNotified = false
+      caseLowNotified = false
+    }
     discoveredMac = parsed.mac || ""
     deviceName = parsed.name || "Soundcore"
     deviceModel = parsed.model || ""
@@ -232,6 +294,7 @@ Item {
     eqBands = bands ? _settleValue("eqBands", bands) : []
     customEqOptions = Model.selectOptions(parsed.schema, Model.SETTING_CUSTOM_EQ)
     customEqProfilesSupported = Model.has(parsed.values || {}, Model.SETTING_CUSTOM_EQ)
+    eqTransferSupported = (parsed.schema || []).some(function (category) { return category.categoryId === "equalizerImportExport" })
     customEqProfile = _settleValue("customEqProfile", String((parsed.values || {})[Model.SETTING_CUSTOM_EQ] || ""))
     eqOptions = Model.selectOptions(parsed.schema, Model.SETTING_EQ_PRESET)
     eqPreset = _settleValue("eqPreset", String((parsed.values || {})[Model.SETTING_EQ_PRESET] || ""))
@@ -275,6 +338,41 @@ Item {
     spatialAudioModeSupported = status.spatialAudioModeSupported
     spatialAudioMode = status.spatialAudioModeSupported
       ? _settleValue("spatialAudioMode", status.spatialAudioMode) : ""
+    ldacSupported = status.ldacSupported
+    ldacEnabled = status.ldacSupported
+      ? _settleValue("ldacEnabled", status.ldacEnabled) : false
+    autoPowerOffSupported = status.autoPowerOffSupported
+    autoPowerOff = status.autoPowerOffSupported
+      ? _settleValue("autoPowerOff", status.autoPowerOff) : ""
+    autoPowerOffOptions = Model.selectOptions(parsed.schema, Model.SETTING_AUTO_POWER_OFF)
+    touchToneSupported = status.touchToneSupported
+    touchTone = status.touchToneSupported ? _settleValue("touchTone", status.touchTone) : false
+    lowBatteryPromptSupported = status.lowBatteryPromptSupported
+    lowBatteryPrompt = status.lowBatteryPromptSupported ? _settleValue("lowBatteryPrompt", status.lowBatteryPrompt) : false
+    deviceInfo = {
+      firmwareLeft: String((parsed.values || {}).firmwareVersionLeft || ""),
+      firmwareRight: String((parsed.values || {}).firmwareVersionRight || ""),
+      serial: String((parsed.values || {}).serialNumber || ""),
+      tws: String((parsed.values || {}).twsStatus || ""),
+      host: String((parsed.values || {}).hostDevice || ""),
+      wind: String((parsed.values || {}).windNoiseDetected || ""),
+      adaptive: String((parsed.values || {}).adaptiveNoiseCanceling || "")
+    }
+    limitHighVolumeSupported = status.limitHighVolumeSupported
+    limitHighVolume = status.limitHighVolumeSupported
+      ? _settleValue("limitHighVolume", status.limitHighVolume) : false
+    limitDbSupported = status.limitDbSupported
+    limitDb = status.limitDbSupported
+      ? _settleValue("limitDb", status.limitDb) : Model.LEVEL_UNKNOWN
+    limitDbOptions = Model.integerRangeOptions(parsed.schema, Model.SETTING_LIMIT_HIGH_VOLUME_DB, " dB")
+    limitRateSupported = status.limitRateSupported
+    limitRate = status.limitRateSupported
+      ? _settleValue("limitRate", status.limitRate) : ""
+    limitRateOptions = Model.selectOptions(parsed.schema, Model.SETTING_LIMIT_HIGH_VOLUME_RATE)
+    var buttons = Model.buttonSettings(parsed.schema, parsed.values || {})
+    buttonBindings = buttons.bindings
+    buttonOptions = buttons.options
+    buttonResetSupported = buttons.resetSupported
     dualConnectionsSupported = status.dualConnectionsSupported
     dualConnections = status.dualConnectionsSupported
       ? _settleValue("dualConnections", status.dualConnections) : false
@@ -286,6 +384,7 @@ Item {
     _checkLowBattery("leftLowNotified", "Left earbud", leftLevel, leftCharging)
     _checkLowBattery("rightLowNotified", "Right earbud", rightLevel, rightCharging)
     _checkLowBattery("caseLowNotified", "Case", caseLevel, false)
+    refreshCodec()
   }
 
   function _noteReadError(message) {
@@ -316,12 +415,13 @@ Item {
   }
 
   function _pumpActions() {
-    if (statusProcess.running || actionProcess.running || !queuedActions) return
+    if (statusProcess.running || actionProcess.running || transferProcess.running || !queuedActions) return
     var command = _actionQueue.shift()
     queuedActions = _actionQueue.length
     if (!connected || command[1] !== discoveredMac) { _clearWrites(); return }
     actionProcess.command = command
     actionProcess.running = true
+    actionWatchdog.interval = command[0] === ldacScript ? 40000 : 15000
     actionWatchdog.restart()
   }
 
@@ -392,6 +492,7 @@ Item {
     connected = false
     lastError = message
     discoveredMac = ""
+    hostCodec = ""
     leftLowNotified = false
     rightLowNotified = false
     caseLowNotified = false
@@ -514,11 +615,82 @@ Item {
       return
     }
     if (!spatialAudioModeSupported) return
+    var turnOffLdac = ldacSupported && ldacEnabled
+    if (turnOffLdac) {
+      _beginWrite("ldacEnabled", false)
+    }
     _beginWrite("spatialAudio", true)
     _beginWrite("spatialAudioMode", effect)
-    _enqueue([setScript, discoveredMac,
+    var command = [setScript, discoveredMac]
+    if (turnOffLdac) command.push(Model.SETTING_LDAC + "=false")
+    command.push(
       Model.SETTING_SPATIAL_AUDIO + "=true",
-      Model.SETTING_SPATIAL_AUDIO_MODE + "=" + effect])
+      Model.SETTING_SPATIAL_AUDIO_MODE + "=" + effect)
+    _enqueue(command)
+  }
+
+  function setLdac(enabled) {
+    if (!connected || !ldacSupported || discoveredMac === "" || updating) return
+    _enqueue([ldacScript, discoveredMac, enabled ? "true" : "false"])
+  }
+
+  function setAutoPowerOff(value) {
+    if (!connected || !autoPowerOffSupported || discoveredMac === "" ||
+        !autoPowerOffOptions.some(function (option) { return option.value === value })) return
+    _beginWrite("autoPowerOff", value)
+    _enqueue([setScript, discoveredMac, Model.SETTING_AUTO_POWER_OFF + "=" + value])
+  }
+
+  function setTouchTone(enabled) {
+    if (!connected || !touchToneSupported || discoveredMac === "") return
+    _beginWrite("touchTone", enabled)
+    _enqueue([setScript, discoveredMac, Model.SETTING_TOUCH_TONE + "=" + (enabled ? "true" : "false")])
+  }
+
+  function transferEq(operation) {
+    if (!connected || !eqTransferSupported || discoveredMac === "" || busy || updating) return
+    transferProcess.command = [eqTransferScript, operation, discoveredMac]
+    transferProcess.running = true
+    transferWatchdog.restart()
+  }
+
+  function setLowBatteryPrompt(enabled) {
+    if (!connected || !lowBatteryPromptSupported || discoveredMac === "") return
+    _beginWrite("lowBatteryPrompt", enabled)
+    _enqueue([setScript, discoveredMac, Model.SETTING_LOW_BATTERY_PROMPT + "=" + (enabled ? "true" : "false")])
+  }
+
+  function setHighVolumeLimit(enabled) {
+    if (!connected || !limitHighVolumeSupported || discoveredMac === "") return
+    _beginWrite("limitHighVolume", enabled)
+    _enqueue([setScript, discoveredMac, Model.SETTING_LIMIT_HIGH_VOLUME + "=" + (enabled ? "true" : "false")])
+  }
+
+  function setLimitDb(value) {
+    if (!connected || !limitDbSupported || discoveredMac === "" ||
+        !limitDbOptions.some(function (option) { return option.value === value })) return
+    _beginWrite("limitDb", value)
+    _enqueue([setScript, discoveredMac, Model.SETTING_LIMIT_HIGH_VOLUME_DB + "=" + value])
+  }
+
+  function setLimitRate(value) {
+    if (!connected || !limitRateSupported || discoveredMac === "" ||
+        !limitRateOptions.some(function (option) { return option.value === value })) return
+    _beginWrite("limitRate", value)
+    _enqueue([setScript, discoveredMac, Model.SETTING_LIMIT_HIGH_VOLUME_RATE + "=" + value])
+  }
+
+  function setButtonBinding(id, value) {
+    if (!connected || discoveredMac === "" || statusStale || updating) return
+    var choices = buttonOptions[id] || []
+    if (!choices.some(function (option) { return option.value === value })) return
+    if (buttonBindings[id] === value) return
+    _enqueue([setScript, discoveredMac, id + "=" + value])
+  }
+
+  function resetButtonBindings() {
+    if (!connected || discoveredMac === "" || statusStale || updating || !buttonResetSupported || !hasButtonControls) return
+    _enqueue([setScript, discoveredMac, Model.SETTING_RESET_BUTTONS])
   }
 
   function setDualConnections(enabled) {
@@ -534,6 +706,7 @@ Item {
     var index = devices.indexOf(mac)
     if ((index >= 0) === enabled) return
     if (enabled && devices.length >= 2) {
+      actionStatusError = true
       actionStatus = "Disconnect one device before connecting another."
       actionStatusTimer.restart()
       return
@@ -552,6 +725,12 @@ Item {
   }
 
   Timer {
+    id: transferWatchdog
+    interval: 15000
+    onTriggered: if (transferProcess.running) transferProcess.running = false
+  }
+
+  Timer {
     id: actionWatchdog
     interval: 15000
     onTriggered: if (actionProcess.running) actionProcess.running = false
@@ -564,6 +743,14 @@ Item {
     repeat: true
     triggeredOnStart: true
     onTriggered: root.refresh()
+  }
+
+  Timer {
+    interval: 3000
+    running: root.panelOpen && root.connected && root.ldacSupported
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.refreshCodec()
   }
 
   Timer {
@@ -602,6 +789,51 @@ Item {
   }
 
   Process {
+    id: transferProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: transferOut; waitForEnd: true }
+    stderr: StdioCollector { id: transferErr; waitForEnd: true }
+    onExited: function (exitCode) {
+      transferWatchdog.stop()
+      root.actionStatusError = exitCode !== 0
+      root.actionStatus = exitCode === 0
+        ? Model.elideError(transferOut.text).trim()
+        : "EQ transfer failed: " + (Model.elideError(transferErr.text) || "command failed")
+      actionStatusTimer.restart()
+      root.refresh()
+      root._pumpActions()
+    }
+  }
+
+  Process {
+    id: codecProcess
+    running: false
+    command: []
+    stdout: StdioCollector { id: codecOut; waitForEnd: true }
+    onExited: function (exitCode) {
+      if (root.codecRequestedMac === root.discoveredMac)
+        root.hostCodec = exitCode === 0 ? Model.parseCodec(codecOut.text) : ""
+      else root.refreshCodec()
+    }
+  }
+
+  Process {
+    id: deviceChoiceProcess
+    running: false
+    command: []
+    stderr: StdioCollector { id: deviceChoiceErr; waitForEnd: true }
+    onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        root.actionStatusError = true
+        root.actionStatus = "Device selection failed: " + (Model.elideError(deviceChoiceErr.text) || "could not save the setting")
+        actionStatusTimer.restart()
+      }
+      root.refresh()
+    }
+  }
+
+  Process {
     id: statusProcess
     running: false
     command: []
@@ -631,6 +863,7 @@ Item {
       actionWatchdog.stop()
       if (exitCode !== 0) {
         root._clearWrites()
+        root.actionStatusError = true
         root.actionStatus = "Update failed: " + (Model.elideError(actionErr.text) || "command failed or timed out")
         actionStatusTimer.restart()
       } else if (root.queuedActions > 0) {

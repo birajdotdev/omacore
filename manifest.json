@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.birajdotdev.omacore",
   "name": "Omacore",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "Biraj",
   "license": "MIT",
-  "description": "Battery, ANC modes and sound effects for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI. Installs with explicit confirmation.",
+  "description": "Battery, ANC modes, sound effects, EQ transfer, button controls, LDAC status and device settings for Soundcore earbuds in the Omarchy bar, via the OpenSCQ30 CLI. Installs with explicit confirmation.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,12 +14,14 @@
   },
   "barWidget": {
     "displayName": "Omacore",
-    "description": "Per-pod and case battery, ambient sound mode (Noise Cancelling / Transparency / Normal) with per-mode settings, and Sound Effects.",
+    "description": "Per-pod and case battery, ambient sound modes, Sound Effects, EQ preset transfer, button controls, device preferences, information, LDAC status and the computer's playback codec.",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
       "pollIntervalSec": 30,
+      "deviceMatch": "",
+      "showBatteryPercent": true,
       "hideWhenDisconnected": true,
       "notifyEnabled": true
     },
@@ -32,6 +34,22 @@
         "max": 300,
         "step": 5,
         "defaultValue": 30
+      },
+      {
+        "key": "batteryDisplayMode",
+        "type": "integer",
+        "label": "Bar battery display (0: icon, 1: lowest, 2: all)",
+        "min": 0,
+        "max": 2,
+        "step": 1,
+        "defaultValue": 1
+      },
+      {
+        "key": "deviceMatch",
+        "type": "string",
+        "label": "Preferred Soundcore device",
+        "defaultValue": "",
+        "description": "Match part of the Bluetooth name or MAC address; empty uses the first connected Soundcore device."
       },
       {
         "key": "hideWhenDisconnected",

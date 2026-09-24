@@ -3,12 +3,18 @@
 # Bluetooth, fetches its settings schema via list-settings, then reads the
 # current values of every relevant setting.  Emits one JSON blob:
 #
-#   { connected, mac, name, model,
+#   { connected, mac, name, model, devices: [{mac, name, model}],
 #     schema: [ { categoryId, settings: [ { settingId, type, options?, ... } ] } ],
 #     values: { settingId: value, ... } }
 #
 # No user configuration required — just Bluetooth pairing + OpenSCQ30 registration.
 set -uo pipefail
+
+device_match=""
+if [ "${1:-}" = "--device-match" ]; then
+  device_match="${2:-}"
+fi
+device_match="${device_match,,}"
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
 
@@ -30,6 +36,7 @@ connected_raw=$(bluetoothctl devices Connected 2>/dev/null) || read_error "Could
 mac=""
 name=""
 model=""
+available_devices='[]'
 
 while IFS= read -r line; do
   [ -z "$line" ] && continue
@@ -37,10 +44,13 @@ while IFS= read -r line; do
   cname=$(cut -d' ' -f3- <<<"$line")
   m=$(jq -r --arg mac "$cmac" '.[] | select(.macAddress | ascii_upcase == ($mac | ascii_upcase)) | .model' <<<"$paired_json" 2>/dev/null)
   if [ -n "$m" ] && [ "$m" != "null" ]; then
-    mac="$cmac"
-    name="$cname"
-    model="$m"
-    break
+    available_devices=$(jq -c --arg mac "$cmac" --arg name "$cname" --arg model "$m" \
+      '. + [{mac:$mac, name:$name, model:$model}]' <<<"$available_devices")
+    if [ -z "$mac" ] && { [ -z "$device_match" ] || [[ "${cmac,,}" == *"$device_match"* || "${cname,,}" == *"$device_match"* ]]; }; then
+      mac="$cmac"
+      name="$cname"
+      model="$m"
+    fi
   fi
 done <<<"$connected_raw"
 
@@ -51,7 +61,7 @@ if [ -z "$mac" ]; then
   # fixable situation worth saying so instead of silently pretending nothing
   # is there. Non-Soundcore devices (mice, phones, ...) don't qualify.
   if [ -z "$connected_raw" ]; then
-    echo '{"connected":false}'
+    jq -cn --argjson devices "$available_devices" '{connected:false, devices:$devices}'
     exit 0
   fi
   models_json=$($OMACORE_CTL list-models --json 2>/dev/null)
@@ -64,6 +74,7 @@ if [ -z "$mac" ]; then
     [ -z "$line" ] && continue
     cmac=$(awk '{print $2}' <<<"$line")
     cname=$(cut -d' ' -f3- <<<"$line")
+    if [ -n "$device_match" ] && [[ "${cmac,,}" != *"$device_match"* && "${cname,,}" != *"$device_match"* ]]; then continue; fi
     if [ -z "$cmac" ] || [ -z "$cname" ]; then continue; fi
     in_registry=$(jq -r --arg mac "$cmac" '[.[] | select(.macAddress | ascii_upcase == ($mac | ascii_upcase))] | length' <<<"$paired_json" 2>/dev/null)
     [ "$in_registry" = "1" ] && continue
@@ -88,22 +99,24 @@ if [ -z "$mac" ]; then
       --arg name "$candidate_name" \
       --arg suggested "$suggested_model" \
       --argjson models "$models_json" \
+      --argjson devices "$available_devices" \
       '{connected:false, registeredMissing:true, unregisteredMac:$mac, unregisteredName:$name,
-        suggestedModel:($suggested | if . == "" then null else . end), models:$models}'
+        suggestedModel:($suggested | if . == "" then null else . end), models:$models, devices:$devices}'
     exit 0
   fi
 
-  echo '{"connected":false}'
+  jq -cn --argjson devices "$available_devices" --arg preferred "$device_match" \
+    '{connected:false, devices:$devices, preferredMissing:($preferred != "" and ($devices | length) > 0)}'
   exit 0
 fi
 
 schema_json=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json 2>/dev/null) || read_error "Bluetooth is connected, but the earbud settings could not be read."
 jq -e 'type == "array" and length > 0' <<<"$schema_json" >/dev/null 2>&1 || read_error "No settings returned by the earbuds."
 
-filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections")]' <<<"$schema_json")
+filtered_schema=$(jq '[.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="equalizerImportExport" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections" or .categoryId=="buttonConfiguration" or .categoryId=="limitHighVolume")]' <<<"$schema_json")
 
 ids=$(jq -r '
-  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections")
+  [.[] | select(.categoryId=="soundModes" or .categoryId=="equalizer" or .categoryId=="deviceInformation" or .categoryId=="miscellaneous" or .categoryId=="dualConnections" or .categoryId=="buttonConfiguration" or .categoryId=="limitHighVolume")
        | .settings[] | select(.type=="select" or .type=="optionalSelect" or .type=="toggle"
                                 or .type=="equalizer" or .type=="information" or .type=="i32Range" or .type=="modifiableSelect"
                                 or .type=="multiSelectWithRemove")
@@ -129,6 +142,7 @@ jq -n \
   --arg mac "$mac" \
   --arg name "$name" \
   --arg model "$model" \
+  --argjson devices "$available_devices" \
   --argjson schema "$filtered_schema" \
   --argjson values "$values_map" \
-  '{connected:true, mac:$mac, name:$name, model:$model, schema:$schema, values:$values}'
+  '{connected:true, mac:$mac, name:$name, model:$model, devices:$devices, schema:$schema, values:$values}'

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Set LDAC, verify the earbud state, and preserve Spatial Audio if LDAC fails.
+set -euo pipefail
+
+plugin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mac="${1:-}"
+desired="${2:-}"
+
+if [[ ! "$mac" =~ ^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$ ]] || [[ "$desired" != true && "$desired" != false ]]; then
+  echo "Usage: omacore-ldac <mac-address> <true|false>" >&2
+  exit 2
+fi
+
+read_state() {
+  "$plugin_dir/omacore-status" --device-match "$mac"
+}
+
+initial="$(read_state)"
+if [[ "$(jq -r '.connected // false' <<<"$initial")" != true ]]; then
+  echo "Earbuds disconnected before changing LDAC." >&2
+  exit 1
+fi
+
+spatial_before="$(jq -r '.values.spatialAudio // false' <<<"$initial")"
+mode_before="$(jq -r '.values.spatialAudioMode // ""' <<<"$initial")"
+spatial_changed=false
+
+restore_spatial() {
+  if [[ "$spatial_changed" == true ]]; then
+    local args=(spatialAudio=true)
+    if [[ -n "$mode_before" ]]; then args+=("spatialAudioMode=$mode_before"); fi
+    "$plugin_dir/omacore-set" "$mac" "${args[@]}" >/dev/null || true
+  fi
+}
+
+if [[ "$desired" == true && "$spatial_before" == true ]]; then
+  "$plugin_dir/omacore-set" "$mac" spatialAudio=false >/dev/null
+  spatial_changed=true
+fi
+
+if ! "$plugin_dir/omacore-set" "$mac" "ldac=$desired" >/dev/null; then
+  restore_spatial
+  echo "Could not send the LDAC setting to the earbuds." >&2
+  exit 1
+fi
+
+for attempt in {1..16}; do
+  # Soundcore says a codec switch can take about ten seconds. A brief Bluetooth
+  # disconnect is also possible, so keep checking across fresh CLI sessions.
+  if state="$(read_state)" &&
+     jq -e --argjson desired "$desired" '.connected == true and (.values.ldac | type) == "boolean" and .values.ldac == $desired' <<<"$state" >/dev/null; then
+    echo OK
+    exit 0
+  fi
+  if [[ "$attempt" -lt 16 ]]; then sleep 1; fi
+done
+
+restore_spatial
+if [[ "$desired" == true ]]; then
+  echo "LDAC stayed off after 15s. Try enabling it in the Soundcore Android app; firmware may need updating." >&2
+else
+  echo "LDAC stayed on after 15s." >&2
+fi
+exit 1

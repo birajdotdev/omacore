@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Transfer OpenSCQ30 saved EQ profiles through the Wayland clipboard.
+set -euo pipefail
+
+operation="${1:-}"
+mac="${2:-}"
+[ -n "$mac" ] || { echo "Missing device address." >&2; exit 1; }
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/omacore-env"
+[ -n "$OMACORE_CTL" ] || { echo "OpenSCQ30 is unavailable." >&2; exit 1; }
+
+case "$operation" in
+  export)
+    command -v wl-copy >/dev/null || { echo "wl-copy is required." >&2; exit 1; }
+    schema=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json)
+    csv=$(jq -er '[.[] | select(.categoryId=="equalizerImportExport") | .settings[] | select(.settingId=="exportCustomEqualizerProfiles") | .setting.options[]] | if length == 0 then error("No saved presets to export") else @csv end' <<<"$schema")
+    # OpenSCQ30 holds this selection only for one CLI session.
+    result=$("$OMACORE_CTL" device --mac-address "$mac" setting --set "exportCustomEqualizerProfiles=$csv" --get exportCustomEqualizerProfilesOutput --json)
+    profiles=$(jq -er '[.[] | select(.settingId=="exportCustomEqualizerProfilesOutput") | .value.value][0]' <<<"$result")
+    jq -e 'type=="array" and length>0' <<<"$profiles" >/dev/null
+    printf '%s' "$profiles" | wl-copy --type text/plain
+    printf 'Copied %s saved EQ preset(s).\n' "$(jq 'length' <<<"$profiles")"
+    ;;
+  import)
+    command -v wl-paste >/dev/null || { echo "wl-paste is required." >&2; exit 1; }
+    profiles=$(wl-paste --no-newline --type text/plain)
+    [ "${#profiles}" -le 65536 ] || { echo "Clipboard data is too large." >&2; exit 1; }
+    spec=$("$OMACORE_CTL" device --mac-address "$mac" list-settings --json | jq -er '[.[] | .settings[] | select(.settingId=="volumeAdjustments" and .type=="equalizer") | .setting][0]')
+    jq -e --argjson spec "$spec" '
+      (type=="array" and length>0 and length<=100) and
+      all(.[];
+        (type=="object") and
+        (.name | type=="string" and length>0 and length<=64) and
+        (.volumeAdjustments | type=="array" and length==($spec.bandHz|length) and
+          all(.[]; type=="number" and .>=($spec.min / (pow(10; $spec.fractionDigits))) and .<=($spec.max / (pow(10; $spec.fractionDigits)))))
+      )
+    ' <<<"$profiles" >/dev/null || { echo "Clipboard does not contain valid EQ presets for this model." >&2; exit 1; }
+    "$OMACORE_CTL" device --mac-address "$mac" setting --set "importCustomEqualizerProfiles=$profiles" >/dev/null
+    printf 'Imported %s EQ preset(s).\n' "$(jq 'length' <<<"$profiles")"
+    ;;
+  *) echo "Usage: omacore-eq-transfer export|import MAC" >&2; exit 2 ;;
+esac
