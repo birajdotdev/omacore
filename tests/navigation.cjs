@@ -6,6 +6,7 @@ const source = fs.readFileSync('Panel.qml', 'utf8');
 const model = vm.createContext({});
 vm.runInContext(fs.readFileSync('Model.js', 'utf8'), model);
 const state = {
+  homeModes: [model.MODE_NOISE_CANCELING, model.MODE_NORMAL, model.MODE_TRANSPARENCY],
   Model: model, pageScroll: {}, effectsView: false, dualView: false,
   settingsView: false, settingsDetail: '', buttonsView: false, selectedGesture: '',
   resetButtonsArmed: false, importEqArmed: false, manageHistory: false,

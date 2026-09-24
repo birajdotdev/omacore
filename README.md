@@ -68,9 +68,11 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
   hardware only reports ten discrete steps, so the widget shows a rounded
   percent rather than a raw sensor value. By default the bar also shows the
   lowest known earbud percentage (or the case percentage when neither bud
-  reports one) on a horizontal bar; `showBatteryPercent` can hide it. A low
+  reports one). Right-click cycles icon only, one percentage, and all three
+  percentages with circled L/R and case icons, and saves the choice. Each battery on the
+  home page has an compact row with a circled L/R or case icon, label, thin theme-colored bar, and right-aligned percentage. A low
   reading colors the bar indicator with the theme's alert color.
-- **Sound mode** — ANC, Transparency or Normal — uses three buttons, with
+- **Sound mode** — ANC, Transparency or Normal — uses circular person icons above the labels in the Sound Mode section, with
   `n`/`t`/`o` shortcuts. Manual ANC intensity and transparency type stay on the
   main page. Selecting ANC also reveals its algorithm (Manual / Adaptive /
   Multi-Scene), scene selection, real-time adaptive ANC, and wind suppression. `w` toggles wind suppression while ANC is active.
@@ -258,8 +260,8 @@ adaptive ANC), a mouse click only registers on the switch itself, not the
 row's label — keyboard `enter`/`space` on the row still works either way.
 The Device picker uses the same dropdown keys.
 
-Left click opens the panel. Right click cycles Noise Cancellation,
-Transparency and Normal while the device status is current. Hover **Sound Mode**
+Left click opens the panel. Right click cycles the bar battery display:
+icon only → icon with lowest percentage → three battery icons with percentages → icon only. Hover **Sound Mode**
 for mode and refresh shortcuts.
 
 ## Settings
@@ -268,7 +270,7 @@ for mode and refresh shortcuts.
 |---------|---------|-------|
 | Poll interval (seconds) | 30 | How often the widget re-runs `omacore-status`. |
 | Preferred Soundcore device (`deviceMatch`) | empty | The panel picker writes the selected MAC address here. Empty uses the first connected registered Soundcore device. A case-insensitive name or MAC substring also works when set from the CLI: `omarchy bar set io.github.birajdotdev.omacore deviceMatch 'R60i NC'`. |
-| Show battery percentage in the bar (`showBatteryPercent`) | on | Shows the lowest known earbud battery, falling back to the case. Set it off with `omarchy bar set io.github.birajdotdev.omacore showBatteryPercent false --json`. |
+| Bar battery display (`batteryDisplayMode`) | 1 | 0: icon only; 1: lowest earbud percentage (case fallback); 2: left, right and case percentages. Right-click cycles and saves it. Set directly with `omarchy bar set io.github.birajdotdev.omacore batteryDisplayMode 2 --json`. Existing `showBatteryPercent` preferences apply until a display mode is saved. |
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is fixable — a missing `openscq30` CLI, or a device connected but not yet registered with OpenSCQ30 — so the install/register controls stay reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
 

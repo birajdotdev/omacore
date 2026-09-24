@@ -311,3 +311,11 @@ exit 0
   }
 } finally {fs.rmSync(ldacDir,{recursive:true,force:true});}
 console.log('Regression checks passed: model, device picker, codec, LDAC, Auto Power-Off, volume limit, button controls, queued writes, read errors, numeric ANC, custom EQ and saved presets.');
+
+assert.equal(model.batteryDisplayMode(0), 0);
+assert.equal(model.batteryDisplayMode(2), 2);
+assert.equal(model.batteryDisplayMode(99), 1);
+assert.equal(model.barBatteryText(0, 90, 80, 100), '');
+assert.equal(model.barBatteryText(1, 90, 80, 100), '80%');
+assert.equal(model.barBatteryText(1, -1, -1, 60), '60%');
+assert.equal(model.barBatteryText(2, 90, -1, 100), 'L 90% · R — · C 100%');

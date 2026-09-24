@@ -36,10 +36,13 @@
         "defaultValue": 30
       },
       {
-        "key": "showBatteryPercent",
-        "type": "boolean",
-        "label": "Show lowest earbud battery in the bar",
-        "defaultValue": true
+        "key": "batteryDisplayMode",
+        "type": "integer",
+        "label": "Bar battery display (0: icon, 1: lowest, 2: all)",
+        "min": 0,
+        "max": 2,
+        "step": 1,
+        "defaultValue": 1
       },
       {
         "key": "deviceMatch",

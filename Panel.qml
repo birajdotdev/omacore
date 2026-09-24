@@ -13,6 +13,8 @@ Panel {
   ipcTarget: "omacore"
   manageIpc: false
 
+  readonly property color soundAccent: Color.accent
+  readonly property var homeModes: [Model.MODE_NOISE_CANCELING, Model.MODE_NORMAL, Model.MODE_TRANSPARENCY]
   property int cursorIndex: 0
   property bool cursorActive: false
   property bool effectsView: false
@@ -148,7 +150,12 @@ Panel {
   readonly property bool hideWhenDisconnected: setting("hideWhenDisconnected", true) === true
   readonly property bool showBatteryPercent: setting("showBatteryPercent", true) === true
   readonly property int barBatteryLevel: Model.barBatteryLevel(pods.leftLevel, pods.rightLevel, pods.caseLevel)
-  readonly property bool barBatteryVisible: showBatteryPercent && (!bar || !bar.vertical) && pods.hasEarbuds && barBatteryLevel !== Model.LEVEL_UNKNOWN
+  property int pendingBatteryDisplay: -1
+  readonly property int batteryDisplayMode: pendingBatteryDisplay >= 0 ? pendingBatteryDisplay : Model.batteryDisplayMode(setting("batteryDisplayMode", showBatteryPercent ? 1 : 0))
+  readonly property bool barBatteryVisible: batteryDisplayMode !== 0 && pods.hasEarbuds
+  readonly property string barBatteryText: Model.barBatteryText(batteryDisplayMode, pods.leftLevel, pods.rightLevel, pods.caseLevel)
+  TextMetrics { id: batteryTextMetrics; text: root.batteryDisplayMode === 2 ? [pods.leftLevel, pods.rightLevel, pods.caseLevel].map(function (level) { return level < 0 ? "—" : level + "%" }).join("") : root.barBatteryText; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
@@ -247,7 +254,7 @@ Panel {
       return rows
     }
     rows.push("settings")
-    for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
+    for (var i = 0; i < homeModes.length; i++) rows.push("mode:" + homeModes[i])
     if (ncSectionVisible) {
         if (pods.noiseCancelingModeSupported) rows.push("ncmode")
         if (pods.noiseCancelingMode === Model.NC_MODE_MANUAL && pods.manualNoiseCancelingSupported) rows.push("manuallevel")
@@ -357,11 +364,24 @@ Panel {
     pods.installCli()
   }
 
-  function cycleSoundMode() {
-    if (!pods.hasEarbuds || pods.statusStale || pods.updating) return
-    var index = Model.MODES.indexOf(pods.ancMode)
-    pods.setAncMode(Model.MODES[(index + 1) % Model.MODES.length])
+  function cycleBatteryDisplay() {
+    if (batteryDisplaySave.running) return
+    pendingBatteryDisplay = (batteryDisplayMode + 1) % 3
+    batteryDisplaySave.command = ["omarchy", "bar", "set", root.moduleName, "batteryDisplayMode", String(pendingBatteryDisplay), "--json"]
+    batteryDisplaySave.running = true
   }
+
+  Process {
+    id: batteryDisplaySave
+    onExited: function (exitCode) {
+      if (exitCode !== 0) {
+        root.pendingBatteryDisplay = -1
+        pods.actionStatusError = true
+        pods.actionStatus = "Could not save battery display preference."
+      }
+    }
+  }
+  onSettingsChanged: pendingBatteryDisplay = -1
 
   visible: !hideWhenDisconnected || pods.hasEarbuds || pods.cliMissing || pods.registeredMissing || pods.statusStale || pods.availableDevices.length > 0
   implicitWidth: button.implicitWidth
@@ -396,6 +416,7 @@ Panel {
   IpcHandler {
     target: root.ipcTarget
     function open(): void { root.open() }
+    function cycleBatteryDisplay(): void { root.cycleBatteryDisplay() }
     function openSettings(page: string): void {
       var pages = ["", "audio", "preferences", "power", "volume", "transfer", "info"]
       if (pages.indexOf(page) < 0) return
@@ -413,34 +434,66 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    slotSize: root.barBatteryVisible ? Style.space(64) : Style.bar.iconSlot
+    slotSize: root.barBatteryVisible ? (bar && bar.vertical ? Style.space(root.batteryDisplayMode === 2 ? 72 : 42) : batteryTextMetrics.width + Style.space(root.batteryDisplayMode === 2 ? 82 : 30)) : Style.bar.iconSlot
     opticalSize: slotSize
-    tooltipText: pods.hasEarbuds
-      ? pods.deviceName + " · " + (root.barBatteryLevel === Model.LEVEL_UNKNOWN ? "Battery unknown" : root.barBatteryLevel + "% battery") + " · Right click to change mode"
-      : "Omacore"
+    tooltipText: ""
     iconComponent: Component {
       Item {
-        Row {
+        GridLayout {
           anchors.centerIn: parent
-          spacing: Style.space(4)
+          columns: bar && bar.vertical ? 1 : 2
+          rowSpacing: Style.space(4)
+          columnSpacing: Style.space(4)
           SoundcoreIcon {
-            anchors.verticalCenter: parent.verticalCenter
+            visible: !root.barBatteryVisible || root.batteryDisplayMode !== 2
+            Layout.alignment: Qt.AlignCenter
+            // Align the drawing with the visible digits rather than the font's line box.
+            transform: Translate { y: root.barBatteryVisible && root.batteryDisplayMode === 1 ? -Style.space(1) : 0 }
             iconSize: Style.space(12)
             color: root.barIconColor
           }
           Text {
-            visible: root.barBatteryVisible
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.barBatteryLevel + "%"
+            visible: root.barBatteryVisible && root.batteryDisplayMode === 1
+            Layout.alignment: Qt.AlignCenter
+            text: root.barBatteryText
             color: root.barIconColor
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
+          }
+          GridLayout {
+            visible: root.barBatteryVisible && root.batteryDisplayMode === 2
+            Layout.alignment: Qt.AlignCenter
+            columns: bar && bar.vertical ? 1 : 3
+            columnSpacing: Style.space(8)
+            rowSpacing: Style.space(4)
+            Repeater {
+              model: [{kind: "left", level: pods.leftLevel}, {kind: "right", level: pods.rightLevel}, {kind: "case", level: pods.caseLevel}]
+              RowLayout {
+                required property var modelData
+                Layout.alignment: Qt.AlignCenter
+                spacing: Style.space(3)
+                ControlIcon {
+                  Layout.alignment: Qt.AlignVCenter
+                  Layout.preferredWidth: Style.space(16)
+                  Layout.preferredHeight: Style.space(16)
+                  kind: modelData.kind
+                  ink: root.barIconColor
+                }
+                Text {
+                  Layout.alignment: Qt.AlignVCenter
+                  text: modelData.level < 0 ? "—" : modelData.level + "%"
+                  color: root.barIconColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
           }
         }
       }
     }
     onPressed: function (buttonCode) {
-      if (buttonCode === Qt.RightButton) root.cycleSoundMode()
+      if (buttonCode === Qt.RightButton) root.cycleBatteryDisplay()
       else root.toggle()
     }
   }
@@ -691,12 +744,20 @@ Panel {
             wrapMode: Text.WordWrap
           }
 
-          RowLayout {
+          PanelSectionHeader {
+            visible: root.mainView && pods.hasEarbuds
+            text: "BATTERY"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+
+          Column {
             visible: root.mainView && pods.hasEarbuds
             width: parent.width
-            BatteryCell { Layout.fillWidth: true; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
-            BatteryCell { Layout.fillWidth: true; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
-            BatteryCell { Layout.fillWidth: true; label: "Case"; level: pods.caseLevel }
+            spacing: Style.space(8)
+            BatteryCell { width: parent.width; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
+            BatteryCell { width: parent.width; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
+            BatteryCell { width: parent.width; label: "Case"; level: pods.caseLevel }
           }
 
           PanelSeparator {
@@ -711,10 +772,10 @@ Panel {
 
             PanelSectionHeader {
               text: "SOUND MODE"
-              MouseArea { id: modeHelp; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
-              PanelToolTip { visible: modeHelp.containsMouse; text: "n ANC · t Transparency · o Normal\nw Wind (ANC) · r Refresh · Esc Back"; fontFamily: root.fontFamily }
               foreground: root.foreground
               fontFamily: root.fontFamily
+              MouseArea { id: modeHelp; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+              PanelToolTip { visible: modeHelp.containsMouse; text: "n ANC · t Transparency · o Normal\nw Wind (ANC) · r Refresh · Esc Back"; fontFamily: root.fontFamily }
             }
 
             Row {
@@ -722,21 +783,58 @@ Panel {
               width: parent.width
               spacing: Style.space(4)
               Repeater {
-                model: Model.MODES
-                Button {
+                model: root.homeModes
+                CursorSurface {
+                  id: modeTile
                   required property var modelData
                   property string rowName: "mode:" + modelData
                   width: (soundModeRow.width - soundModeRow.spacing * 2) / 3
-                  text: modelData === Model.MODE_NOISE_CANCELING ? "ANC" : Model.modeLabel(modelData)
-                  fontSize: Style.font.bodySmall
-                  horizontalPadding: Style.space(2)
+                  implicitHeight: Style.space(86)
                   foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  bordered: true
-                  active: pods.ancMode === modelData
+                  bordered: false
+                  color: "transparent"
+                  borderSpec: Border.none()
+                  current: pods.ancMode === modelData
                   hasCursor: root.rowHasCursor(rowName)
-                  onClicked: pods.setAncMode(modelData)
-                  onHovered: function (h) { if (h) root.focusRow(rowName) }
+                  Accessible.role: Accessible.RadioButton
+                  Accessible.name: Model.modeLabel(modelData)
+                  Accessible.checked: current
+                  Column {
+                    anchors.top: parent.top
+                    anchors.topMargin: Style.space(10)
+                    width: parent.width
+                    spacing: Style.space(8)
+                    Rectangle {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      width: Style.space(48); height: width; radius: width / 2
+                      color: modeTile.current ? root.soundAccent : Qt.tint(Color.background, Qt.alpha(root.foreground, 0.10))
+                      border.width: modeTile.hasCursor ? 1 : 0
+                      border.color: root.foreground
+                      ControlIcon {
+                        anchors.centerIn: parent
+                        width: Style.space(29); height: width
+                        kind: modeTile.modelData === Model.MODE_TRANSPARENCY ? "transparency" : modeTile.modelData === Model.MODE_NOISE_CANCELING ? "anc" : "normal"
+                        ink: modeTile.current ? Color.background : root.foreground
+                      }
+                    }
+                    Text {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      width: parent.width
+                      horizontalAlignment: Text.AlignHCenter
+                      wrapMode: Text.WordWrap
+                      text: modeTile.modelData === Model.MODE_NOISE_CANCELING ? "ANC" : Model.modeLabel(modeTile.modelData)
+                      color: modeTile.current ? root.foreground : Qt.alpha(root.foreground, 0.6)
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.bodySmall
+                    }
+                  }
+                  MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onEntered: root.focusRow(modeTile.rowName)
+                    onClicked: pods.setAncMode(modeTile.modelData)
+                  }
                 }
               }
             }
@@ -1718,17 +1816,56 @@ Panel {
     }
   }
 
-  component BatteryCell: Column {
+  component BatteryCell: RowLayout {
+    id: batteryCell
     property string label: ""
     property int level: Model.LEVEL_UNKNOWN
     property bool charging: false
-    spacing: Style.space(4)
-    Text { text: label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+    readonly property color levelColor: level >= 0 && level <= pods.lowBatteryPercent && !charging ? root.urgent : root.soundAccent
+    spacing: Style.space(8)
+    Accessible.role: Accessible.StaticText
+    Accessible.name: label + " battery: " + (level < 0 ? "unknown" : level + " percent") + (charging ? ", charging" : "")
+    ControlIcon {
+      kind: batteryCell.label.toLowerCase()
+      ink: root.foreground
+      Layout.preferredWidth: Style.space(17)
+      Layout.preferredHeight: Style.space(17)
+      Layout.alignment: Qt.AlignVCenter
+    }
     Text {
-      text: (level === Model.LEVEL_UNKNOWN ? "—" : level + "%") + (charging ? " ϟ" : "")
-      color: level >= 0 && level <= pods.lowBatteryPercent && !charging ? root.urgent : root.foreground
+      Layout.preferredWidth: Style.space(40)
+      text: batteryCell.label
+      color: root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.bodySmall
+    }
+    Rectangle {
+      Layout.fillWidth: true
+      Layout.preferredHeight: Style.space(4)
+      Layout.alignment: Qt.AlignVCenter
+      radius: height / 2
+      color: Qt.alpha(root.foreground, 0.15)
+      Rectangle {
+        width: parent.width * Math.max(0, Math.min(1, batteryCell.level / 100))
+        height: parent.height
+        radius: height / 2
+        color: batteryCell.levelColor
+      }
+    }
+    Text {
+      Layout.preferredWidth: Style.space(12)
+      text: batteryCell.charging ? "ϟ" : ""
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+    Text {
+      Layout.preferredWidth: Style.space(38)
+      horizontalAlignment: Text.AlignRight
+      text: batteryCell.level < 0 ? "—" : batteryCell.level + "%"
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
   }
 

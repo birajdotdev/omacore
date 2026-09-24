@@ -439,3 +439,15 @@ function frequencyLabel(hz) {
 function customProfileValue(name) {
   return /^[+\-\\]/.test(name) ? "\\" + name : name
 }
+
+// 0: icon, 1: lowest battery, 2: left/right/case.
+function batteryDisplayMode(value) {
+  var mode = Number(value)
+  return mode === 0 || mode === 1 || mode === 2 ? mode : 1
+}
+function barBatteryText(mode, left, right, caseLevel) {
+  function percent(level) { return level === LEVEL_UNKNOWN ? "—" : level + "%" }
+  if (mode === 0) return ""
+  if (mode === 2) return "L " + percent(left) + " · R " + percent(right) + " · C " + percent(caseLevel)
+  return percent(barBatteryLevel(left, right, caseLevel))
+}
