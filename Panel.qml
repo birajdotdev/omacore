@@ -434,7 +434,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    slotSize: root.barBatteryVisible ? (bar && bar.vertical ? Style.space(root.batteryDisplayMode === 2 ? 72 : 42) : batteryTextMetrics.width + Style.space(root.batteryDisplayMode === 2 ? 82 : 30)) : Style.bar.iconSlot
+    slotSize: root.barBatteryVisible ? (bar && bar.vertical ? Style.space(root.batteryDisplayMode === 2 ? 112 : 42) : batteryTextMetrics.width + Style.space(root.batteryDisplayMode === 2 ? 82 : 30)) : Style.bar.iconSlot
     opticalSize: slotSize
     tooltipText: ""
     iconComponent: Component {
@@ -468,10 +468,12 @@ Panel {
             rowSpacing: Style.space(4)
             Repeater {
               model: [{kind: "left", level: pods.leftLevel}, {kind: "right", level: pods.rightLevel}, {kind: "case", level: pods.caseLevel}]
-              RowLayout {
+              GridLayout {
                 required property var modelData
                 Layout.alignment: Qt.AlignCenter
-                spacing: Style.space(3)
+                columns: bar && bar.vertical ? 1 : 2
+                columnSpacing: Style.space(3)
+                rowSpacing: Style.space(2)
                 ControlIcon {
                   Layout.alignment: Qt.AlignVCenter
                   Layout.preferredWidth: Style.space(16)
@@ -623,6 +625,7 @@ Panel {
               enabled: !pods.busy && !pods.updating && !pods.choosingDevice
               foreground: root.foreground
               fontFamily: root.fontFamily
+              property string rowName: "device"
               hasCursor: root.rowHasCursor("device")
               onChanged: function (v) { pods.chooseDevice(v) }
               onHovered: function (h) { if (h) root.focusRow("device") }
@@ -666,6 +669,7 @@ Panel {
               horizontalPadding: Style.spacing.controlPaddingX
               verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
               bordered: true
+              property string rowName: "installcli"
               hasCursor: root.rowHasCursor("installcli")
               onClicked: launchInstaller()
               onHovered: function (h) { if (h) root.focusRow("installcli") }
@@ -704,6 +708,7 @@ Panel {
               options: Model.modelOptions(pods.registerModels)
               foreground: root.foreground
               fontFamily: root.fontFamily
+              property string rowName: "registerdev"
               hasCursor: root.rowHasCursor("registerdev")
               onHovered: function (h) { if (h) root.focusRow("registerdev") }
             }
@@ -728,6 +733,7 @@ Panel {
               horizontalPadding: Style.spacing.controlPaddingX
               verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
               bordered: true
+              property string rowName: "registerdev"
               hasCursor: root.rowHasCursor("registerdev")
               onClicked: pods.registerDevice(registerModelDropdown.value)
               onHovered: function (h) { if (h) root.focusRow("registerdev") }
@@ -882,6 +888,7 @@ Panel {
                   options: root.ncModeOptions
                   foreground: root.foreground
                   fontFamily: root.fontFamily
+                  property string rowName: "ncmode"
                   hasCursor: root.rowHasCursor("ncmode")
                   onChanged: function (v) { pods.setNoiseCancelingMode(v) }
                   onHovered: function (h) { if (h) root.focusRow("ncmode") }
@@ -926,6 +933,7 @@ Panel {
                     verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
                     bordered: true
                     active: pods.multiSceneNoiseCanceling === modelData
+                    property string rowName: "scene:" + modelData
                     hasCursor: root.rowHasCursor("scene:" + modelData)
                     onClicked: pods.setMultiSceneNoiseCanceling(modelData)
                     onHovered: function (h) { if (h) root.focusRow("scene:" + modelData) }
@@ -1486,6 +1494,7 @@ Panel {
                   fontSize: Style.font.bodySmall
                   foreground: root.foreground
                   fontFamily: root.fontFamily
+                  property string rowName: "dualmanage"
                   hasCursor: root.rowHasCursor("dualmanage")
                   onHovered: function (h) { if (h) root.focusRow("dualmanage") }
                   onClicked: root.manageHistory = !root.manageHistory
@@ -1565,6 +1574,7 @@ Panel {
                   options: pods.eqOptions
                   foreground: root.foreground
                   fontFamily: root.fontFamily
+                  property string rowName: "eqpreset"
                   hasCursor: root.rowHasCursor("eqpreset")
                   onChanged: function (v) { pods.setEqPreset(v) }
                   onHovered: function (h) { if (h) root.focusRow("eqpreset") }
@@ -1611,6 +1621,7 @@ Panel {
                 text: "Copy saved presets"
                 foreground: root.foreground
                 fontFamily: root.fontFamily
+                property string rowName: "eqexport"
                 hasCursor: root.rowHasCursor("eqexport")
                 enabled: !pods.busy
                 onClicked: pods.transferEq("export")
@@ -1620,6 +1631,7 @@ Panel {
                 text: root.importEqArmed ? "Confirm import from clipboard" : "Import from clipboard"
                 foreground: root.foreground
                 fontFamily: root.fontFamily
+                property string rowName: "eqimport"
                 hasCursor: root.rowHasCursor("eqimport")
                 enabled: !pods.busy
                 onClicked: root.importEq()
@@ -1660,6 +1672,7 @@ Panel {
                     fontFamily: root.fontFamily
                     bordered: true
                     active: pods.spatialAudioMode === modelData
+                    property string rowName: "soundfx:" + modelData
                     hasCursor: root.rowHasCursor("soundfx:" + modelData)
                     onClicked: pods.setSoundEffect(modelData)
                     onHovered: function (h) { if (h) root.focusRow("soundfx:" + modelData) }

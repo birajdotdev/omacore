@@ -309,6 +309,15 @@ exit 0
     assert.equal(fs.readFileSync(path.join(ldacDir,'mode'),'utf8'),'Movie');
     assert.equal(fs.readFileSync(path.join(ldacDir,'ldac'),'utf8'),accept==='0'?'false':'true');
   }
+  // A missing/null readback must never count as a successful disable.
+  for (const value of ['{}', '{"ldac":null}', '{"ldac":false}']) {
+    fs.writeFileSync(path.join(ldacDir,'omacore-status'), `#!/bin/sh
+printf '%s\\n' '{"connected":true,"values":${value}}'
+`, {mode:0o755});
+    const result = spawnSync('bash', [path.join(ldacDir,'omacore-ldac'), 'AA:BB:CC:DD:EE:FF', 'false'], {
+      encoding:'utf8', env:{...process.env,PATH:ldacDir+':'+process.env.PATH,LDAC_TEST_DIR:ldacDir,LDAC_TEST_ACCEPT:'0'}});
+    assert.equal(result.status, value === '{"ldac":false}' ? 0 : 1, 'LDAC requires explicit boolean readback: ' + value);
+  }
 } finally {fs.rmSync(ldacDir,{recursive:true,force:true});}
 console.log('Regression checks passed: model, device picker, codec, LDAC, Auto Power-Off, volume limit, button controls, queued writes, read errors, numeric ANC, custom EQ and saved presets.');
 

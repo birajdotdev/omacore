@@ -160,9 +160,6 @@ negotiated codec without changing audio settings.
   affiliated with this plugin's author — it just happens to be the CLI this
   widget shells out to.
 
-- `pactl` for the computer's playback codec indicator. The earbud controls
-  still work if it is absent; the codec indicator shows **Unavailable**.
-
   If it's missing, use the explicit install action described above. The
   `omacore-install` script downloads **Oppzippy/OpenSCQ30 v2.12.0** from its
   immutable release URL, enforces a 50 MiB download limit, verifies the
@@ -186,6 +183,11 @@ negotiated codec without changing audio settings.
   ```
 
   (Substitute the latest release tag for `v2.12.0` if a newer one exists.)
+
+- `pactl` for the computer's playback codec indicator. The earbud controls
+  still work if it is absent; the codec indicator shows **Unavailable**.
+
+- `wl-clipboard` (`wl-copy` and `wl-paste`) for saved EQ preset transfer.
 
 - Earbuds paired over the normal Bluetooth flow first (`omarchy bluetooth
   device` or the stock Bluetooth panel).
@@ -273,6 +275,8 @@ for mode and refresh shortcuts.
 | Bar battery display (`batteryDisplayMode`) | 1 | 0: icon only; 1: lowest earbud percentage (case fallback); 2: left, right and case percentages. Right-click cycles and saves it. Set directly with `omarchy bar set io.github.birajdotdev.omacore batteryDisplayMode 2 --json`. Existing `showBatteryPercent` preferences apply until a display mode is saved. |
 | Hide when unreachable | on | Leaves the bar entirely rather than sitting there with nothing to say. Kept visible (in the alert color) when the issue is fixable — a missing `openscq30` CLI, or a device connected but not yet registered with OpenSCQ30 — so the install/register controls stay reachable. |
 | Desktop notifications | on | Notifies on disconnect and when a bud/case battery drops to 20% or below (once per drop, via `omarchy-notification-send`). |
+
+See [CHANGELOG.md](CHANGELOG.md) for the 0.6.0 release notes.
 
 ## Development checks
 

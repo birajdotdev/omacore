@@ -81,3 +81,11 @@ assert.equal(state.pageKey, 'settings/preferences');
 ctx.showEffects(true); ctx.goBack();
 assert.equal(state.pageKey, 'main');
 console.log('Navigation checks passed: parent pages, scroll restoration, keyboard targets and feature placement.');
+
+// Hidden sections must never capture a cursor target with the same name.
+vm.runInContext(source.match(/^  function findCursorItem\(parentItem, name\) \{[\s\S]*?^  \}/m)[0], ctx);
+const target = {visible:true, rowName:'eqimport', children:[]};
+assert.equal(ctx.findCursorItem({visible:true,children:[{visible:false,children:[{visible:true,rowName:'eqimport',children:[]}]},target]}, 'eqimport'), target);
+for (const row of ['eqimport','eqexport','dualmanage','ncmode','eqpreset','device']) {
+  assert.ok(source.includes('property string rowName: "' + row + '"'), 'scroll target missing: ' + row);
+}

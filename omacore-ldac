@@ -48,8 +48,7 @@ for attempt in {1..16}; do
   # Soundcore says a codec switch can take about ten seconds. A brief Bluetooth
   # disconnect is also possible, so keep checking across fresh CLI sessions.
   if state="$(read_state)" &&
-     [[ "$(jq -r '.connected // false' <<<"$state")" == true ]] &&
-     [[ "$(jq -r '.values.ldac // false' <<<"$state")" == "$desired" ]]; then
+     jq -e --argjson desired "$desired" '.connected == true and (.values.ldac | type) == "boolean" and .values.ldac == $desired' <<<"$state" >/dev/null; then
     echo OK
     exit 0
   fi
