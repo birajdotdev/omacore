@@ -35,7 +35,7 @@ Panel {
   })
   readonly property bool hasSoundEffects: pods.customEqSupported || pods.eqOptions.length > 0 || (pods.spatialAudioSupported && pods.spatialAudioModeSupported)
   readonly property bool devicePickerVisible: mainView && !pods.cliMissing && !pods.registeredMissing &&
-    (pods.availableDevices.length > 1 || pods.deviceMatch !== "")
+    (pods.availableDevices.length > 1 || (!pods.hasEarbuds && pods.deviceMatch !== ""))
   readonly property var deviceOptions: [{ value: "", label: "Automatic" }].concat(pods.availableDevices.map(function (device) {
     return { value: device.mac, label: device.name + " · " + device.mac.slice(-5) }
   }))
@@ -57,82 +57,40 @@ Panel {
     return pods.eqOptions.length ? "Custom EQ" : "Default"
   }
 
-  function showEffects(show) {
+  property var pageScroll: ({})
+  readonly property string pageKey: effectsView ? "effects" : dualView ? "dual" : buttonsView ? "buttons/" + selectedGesture : settingsView ? "settings/" + settingsDetail : "main"
+
+  function navigate(page, detail) {
+    pageScroll[pageKey] = panelFlick.contentY
     deviceDropdown.close()
     ncModeDropdown.close()
     eqPresetDropdown.close()
     customEditor.closeEditors()
-    effectsView = show
-    dualView = false
-    settingsView = false
-    settingsDetail = ""
-    buttonsView = false
-    selectedGesture = ""
+    effectsView = page === "effects"
+    dualView = page === "dual"
+    settingsView = page === "settings"
+    buttonsView = page === "buttons"
+    settingsDetail = settingsView ? (detail || "") : ""
+    selectedGesture = buttonsView ? (detail || "") : ""
     resetButtonsArmed = false
     importEqArmed = false
     manageHistory = false
     cursorActive = false
     cursorIndex = 0
+    var scroll = pageScroll[pageKey] || 0
     panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function () {
+      panelFlick.contentY = Math.max(0, Math.min(scroll, panelFlick.contentHeight - panelFlick.height))
+      keyCatcher.forceActiveFocus()
+    })
   }
 
-  function showDual(show) {
-    deviceDropdown.close()
-    ncModeDropdown.close()
-    eqPresetDropdown.close()
-    customEditor.closeEditors()
-    manageHistory = false
-    dualView = show
-    effectsView = false
-    settingsView = false
-    settingsDetail = ""
-    buttonsView = false
-    selectedGesture = ""
-    resetButtonsArmed = false
-    importEqArmed = false
-    cursorActive = false
-    cursorIndex = 0
-    panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
-  }
-
-  function showSettings(show) {
-    deviceDropdown.close()
-    ncModeDropdown.close()
-    eqPresetDropdown.close()
-    customEditor.closeEditors()
-    settingsView = show
-    settingsDetail = ""
-    effectsView = false
-    dualView = false
-    buttonsView = false
-    selectedGesture = ""
-    resetButtonsArmed = false
-    importEqArmed = false
-    manageHistory = false
-    cursorActive = false
-    cursorIndex = 0
-    panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
-  }
-
-  function showHighVolume() {
-    if (!pods.limitHighVolumeSupported) return
-    settingsDetail = "volume"
-    cursorActive = false
-    cursorIndex = 0
-    panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
-  }
-
-  function showDeviceInfo() {
-    settingsDetail = "info"
-    cursorActive = false
-    cursorIndex = 0
-    panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
-  }
+  function showEffects(show) { navigate(show ? "effects" : "main") }
+  function showDual(show) { navigate(show ? "dual" : "settings") }
+  function showSettings(show) { navigate(show ? "settings" : "main") }
+  function showDetail(detail) { navigate("settings", detail) }
+  function showHighVolume() { if (pods.limitHighVolumeSupported) showDetail("volume") }
+  function showDeviceInfo() { showDetail("info") }
 
   readonly property var deviceInfoRows: [
     { label: "Model", value: pods.deviceModel },
@@ -145,34 +103,11 @@ Panel {
     { label: "Adaptive ANC", value: pods.deviceInfo.adaptive || "" }
   ].filter(function (row) { return row.value !== "" })
 
-  function showButtons(show) {
-    deviceDropdown.close()
-    ncModeDropdown.close()
-    eqPresetDropdown.close()
-    customEditor.closeEditors()
-    buttonsView = show
-    effectsView = false
-    dualView = false
-    settingsView = false
-    settingsDetail = ""
-    selectedGesture = ""
-    resetButtonsArmed = false
-    manageHistory = false
-    importEqArmed = false
-    cursorActive = false
-    cursorIndex = 0
-    panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
-  }
+  function showButtons(show) { navigate(show ? "buttons" : "settings") }
 
   function showGesture(id) {
     if (!pods.buttonOptions[id] || !pods.buttonOptions[id].length) return
-    selectedGesture = id
-    resetButtonsArmed = false
-    cursorActive = false
-    cursorIndex = 0
-    panelFlick.contentY = 0
-    Qt.callLater(function () { keyCatcher.forceActiveFocus() })
+    navigate("buttons", id)
   }
 
   function confirmResetButtons() {
@@ -185,6 +120,7 @@ Panel {
   function goBack() {
     if (buttonsView && selectedGesture !== "") { showButtons(true); return }
     if (buttonsView) { showButtons(false); return }
+    if (settingsView && (settingsDetail === "volume" || settingsDetail === "power")) { showDetail("preferences"); return }
     if (settingsView && settingsDetail !== "") { showSettings(true); return }
     if (settingsView) { showSettings(false); return }
     if (dualView) { showDual(false); return }
@@ -254,7 +190,6 @@ Panel {
         rows.push("customflat")
         if (pods.customEqProfilesSupported) { rows.push("customname"); rows.push("customsave") }
       } else if (pods.eqOptions.length) rows.push("eqpreset")
-      if (pods.eqTransferSupported) { if (pods.customEqOptions.length) rows.push("eqexport"); rows.push("eqimport") }
       return rows
     }
     if (settingsView) {
@@ -264,12 +199,25 @@ Panel {
         for (var v = 0; v < pods.limitDbOptions.length; v++) rows.push("volumedb:" + pods.limitDbOptions[v].value)
         for (var r = 0; r < pods.limitRateOptions.length; r++) rows.push("volumerate:" + pods.limitRateOptions[r].value)
       } else if (settingsDetail === "") {
-        for (var p = 0; p < pods.autoPowerOffOptions.length; p++)
-          rows.push("power:" + pods.autoPowerOffOptions[p].value)
+        if (pods.ldacSupported || pods.hostCodec !== "") rows.push("detail:audio")
+        if (pods.dualConnectionsSupported) rows.push("dual")
+        if (pods.hasButtonControls) rows.push("buttons")
+        if (pods.autoPowerOffSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || pods.limitHighVolumeSupported) rows.push("detail:preferences")
+        if (pods.eqTransferSupported) rows.push("detail:transfer")
+        if (deviceInfoRows.length > 0) rows.push("detail:info")
+      } else if (settingsDetail === "preferences") {
+        if (pods.autoPowerOffSupported && pods.autoPowerOffOptions.length) rows.push("detail:power")
         if (pods.touchToneSupported) rows.push("touchtone")
         if (pods.lowBatteryPromptSupported) rows.push("lowprompt")
         if (pods.limitHighVolumeSupported) rows.push("volumesettings")
-        if (deviceInfoRows.length) rows.push("deviceinfo")
+      } else if (settingsDetail === "power") {
+        for (var p = 0; p < pods.autoPowerOffOptions.length; p++) rows.push("power:" + pods.autoPowerOffOptions[p].value)
+      } else if (settingsDetail === "audio") {
+        if (pods.ldacSupported) rows.push("ldac")
+      } else if (settingsDetail === "transfer") {
+        if (pods.customEqOptions.length) rows.push("eqexport")
+        rows.push("eqimport")
+
       }
       return rows
     }
@@ -298,27 +246,19 @@ Panel {
       }
       return rows
     }
+    rows.push("settings")
     for (var i = 0; i < Model.MODES.length; i++) rows.push("mode:" + Model.MODES[i])
-
-    if (pods.ancMode === Model.MODE_NOISE_CANCELING) {
-      if (pods.noiseCancelingModeSupported) rows.push("ncmode")
-      if (pods.noiseCancelingMode === Model.NC_MODE_MANUAL && pods.manualNoiseCancelingSupported) {
-        rows.push("manuallevel")
-      }
-      if (pods.noiseCancelingMode === Model.NC_MODE_MULTI_SCENE && pods.multiSceneNoiseCancelingSupported) {
-        for (var k = 0; k < Model.SCENES.length; k++) rows.push("scene:" + Model.SCENES[k])
-      }
-      if (pods.realTimeAdaptiveNoiseCancelingSupported) rows.push("realtimeadaptive")
-      if (pods.windNoiseSuppressionSupported) rows.push("windnoise")
-    } else if (pods.ancMode === Model.MODE_TRANSPARENCY && pods.transparencyModeSupported) {
-      for (var m = 0; m < Model.TRANSPARENCY_MODES.length; m++) rows.push("transparency:" + Model.TRANSPARENCY_MODES[m])
+    if (ncSectionVisible) {
+        if (pods.noiseCancelingModeSupported) rows.push("ncmode")
+        if (pods.noiseCancelingMode === Model.NC_MODE_MANUAL && pods.manualNoiseCancelingSupported) rows.push("manuallevel")
+        if (pods.noiseCancelingMode === Model.NC_MODE_MULTI_SCENE && pods.multiSceneNoiseCancelingSupported)
+          for (var k = 0; k < Model.SCENES.length; k++) rows.push("scene:" + Model.SCENES[k])
+        if (pods.realTimeAdaptiveNoiseCancelingSupported) rows.push("realtimeadaptive")
+        if (pods.windNoiseSuppressionSupported) rows.push("windnoise")
     }
-
+    if (transparencySectionVisible)
+      for (var m = 0; m < Model.TRANSPARENCY_MODES.length; m++) rows.push("transparency:" + Model.TRANSPARENCY_MODES[m])
     if (hasSoundEffects) rows.push("effects")
-    if (pods.ldacSupported) rows.push("ldac")
-    if ((pods.autoPowerOffSupported && pods.autoPowerOffOptions.length) || pods.limitHighVolumeSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || deviceInfoRows.length) rows.push("settings")
-    if (pods.hasButtonControls) rows.push("buttons")
-    if (pods.dualConnectionsSupported) rows.push("dual")
     return rows
   }
 
@@ -338,7 +278,7 @@ Panel {
   }
 
   function findCursorItem(parentItem, name) {
-    if (!parentItem) return null
+    if (!parentItem || !parentItem.visible) return null
     if (parentItem.visible && parentItem.rowName === name) return parentItem
     for (var i = 0; i < parentItem.children.length; i++) {
       var found = findCursorItem(parentItem.children[i], name)
@@ -363,6 +303,7 @@ Panel {
     if (name === "") return
     if (name === "installcli" && !pods.cliInstalling) { launchInstaller(); return }
     if (name === "registerdev" && !pods.registering) { pods.registerDevice(registerModelDropdown.value); return }
+    if (name.indexOf("detail:") === 0) { showDetail(name.substring(7)); return }
     if (name === "device") { deviceDropdown.toggle(); return }
     if (name === "effects") { showEffects(true); return }
     if (name === "dual") { showDual(true); return }
@@ -427,6 +368,7 @@ Panel {
   implicitHeight: button.implicitHeight
 
   onOpenedChanged: if (opened) {
+    pageScroll = ({})
     effectsView = false
     dualView = false
     settingsView = false
@@ -454,6 +396,12 @@ Panel {
   IpcHandler {
     target: root.ipcTarget
     function open(): void { root.open() }
+    function openSettings(page: string): void {
+      var pages = ["", "audio", "preferences", "power", "volume", "transfer", "info"]
+      if (pages.indexOf(page) < 0) return
+      root.open()
+      root.showDetail(page)
+    }
     function openDual(): void { root.open(); root.showDual(true) }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
@@ -561,10 +509,13 @@ Panel {
           width: panelFlick.width
           spacing: Style.space(12)
 
-          PanelHero {
-            id: hero
+          RowLayout {
             visible: root.mainView
             width: parent.width
+            spacing: Style.space(8)
+          PanelHero {
+            id: hero
+            Layout.fillWidth: true
             title: pods.cliMissing ? "OpenSCQ30 CLI required" : (pods.registeredMissing ? (pods.unregisteredName || "Soundcore") : (pods.hasEarbuds ? pods.deviceName : "Soundcore"))
             meta: pods.hasEarbuds
               ? Model.modeLabel(pods.ancMode) + (pods.ancMode === Model.MODE_NOISE_CANCELING && pods.noiseCancelingMode !== ""
@@ -580,6 +531,19 @@ Panel {
                 iconSize: Style.font.display
                 color: pods.hasEarbuds ? root.foreground : root.dim
               }
+            }
+          }
+
+            PanelActionButton {
+              property string rowName: "settings"
+              visible: pods.hasEarbuds
+              iconText: "󰒓"
+              tooltipText: "Advanced Settings"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              hasCursor: root.rowHasCursor("settings")
+              onHovered: function (h) { if (h) root.focusRow("settings") }
+              onClicked: root.showSettings(true)
             }
           }
 
@@ -721,31 +685,18 @@ Panel {
             visible: pods.actionStatus !== ""
             width: parent.width
             text: pods.actionStatus
-            color: root.urgent
+            color: pods.actionStatusError ? root.urgent : root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
           }
 
-          Column {
+          RowLayout {
             visible: root.mainView && pods.hasEarbuds
             width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "BATTERY"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Column {
-              width: parent.width
-              spacing: Style.space(6)
-
-              LevelRow { width: parent.width; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
-              LevelRow { width: parent.width; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
-              LevelRow { width: parent.width; label: "Case"; level: pods.caseLevel; charging: false }
-            }
+            BatteryCell { Layout.fillWidth: true; label: "Left"; level: pods.leftLevel; charging: pods.leftCharging }
+            BatteryCell { Layout.fillWidth: true; label: "Right"; level: pods.rightLevel; charging: pods.rightCharging }
+            BatteryCell { Layout.fillWidth: true; label: "Case"; level: pods.caseLevel }
           }
 
           PanelSeparator {
@@ -760,37 +711,34 @@ Panel {
 
             PanelSectionHeader {
               text: "SOUND MODE"
+              MouseArea { id: modeHelp; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+              PanelToolTip { visible: modeHelp.containsMouse; text: "n ANC · t Transparency · o Normal\nw Wind (ANC) · r Refresh · Esc Back"; fontFamily: root.fontFamily }
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
 
-            Column {
+            Row {
+              id: soundModeRow
               width: parent.width
-              spacing: Style.space(6)
-
+              spacing: Style.space(4)
               Repeater {
                 model: Model.MODES
-                OptionRow {
+                Button {
                   required property var modelData
-                  width: parent.width
-                  rowName: "mode:" + modelData
-                  label: Model.modeLabel(modelData)
-                  selected: pods.ancMode === modelData
-                  onActivated: pods.setAncMode(modelData)
+                  property string rowName: "mode:" + modelData
+                  width: (soundModeRow.width - soundModeRow.spacing * 2) / 3
+                  text: modelData === Model.MODE_NOISE_CANCELING ? "ANC" : Model.modeLabel(modelData)
+                  fontSize: Style.font.bodySmall
+                  horizontalPadding: Style.space(2)
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  bordered: true
+                  active: pods.ancMode === modelData
+                  hasCursor: root.rowHasCursor(rowName)
+                  onClicked: pods.setAncMode(modelData)
+                  onHovered: function (h) { if (h) root.focusRow(rowName) }
                 }
               }
-
-              Text {
-                width: parent.width
-                text: "n ANC · t Transparency · o Normal" +
-                  (root.ncSectionVisible && pods.windNoiseSuppressionSupported ? " · w Wind" : "") +
-                  "\nr Refresh · Tab Next panel"
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                wrapMode: Text.WordWrap
-              }
-
             }
           }
 
@@ -927,19 +875,26 @@ Panel {
               fontFamily: root.fontFamily
             }
 
-            Column {
+            Row {
+              id: transparencyRow
               width: parent.width
               spacing: Style.space(6)
-
               Repeater {
                 model: Model.TRANSPARENCY_MODES
-                OptionRow {
+                Button {
                   required property var modelData
-                  width: parent.width
-                  rowName: "transparency:" + modelData
-                  label: Model.transparencyModeLabel(modelData)
-                  selected: pods.transparencyMode === modelData
-                  onActivated: pods.setTransparencyMode(modelData)
+                  property string rowName: "transparency:" + modelData
+                  width: (transparencyRow.width - transparencyRow.spacing * (Model.TRANSPARENCY_MODES.length - 1)) / Model.TRANSPARENCY_MODES.length
+                  text: Model.transparencyModeLabel(modelData)
+                  fontSize: Style.font.bodySmall
+                  horizontalPadding: Style.space(2)
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  bordered: true
+                  active: pods.transparencyMode === modelData
+                  hasCursor: root.rowHasCursor(rowName)
+                  onClicked: pods.setTransparencyMode(modelData)
+                  onHovered: function (h) { if (h) root.focusRow(rowName) }
                 }
               }
             }
@@ -959,100 +914,13 @@ Panel {
             onActivated: root.showEffects(true)
           }
 
-          PanelSeparator {
-            visible: root.mainView && pods.hasEarbuds && pods.ldacSupported
-            foreground: root.foreground
-          }
-
-          Column {
-            visible: root.mainView && pods.hasEarbuds && pods.ldacSupported
-            width: parent.width
-            spacing: Style.space(8)
-
-            PanelSectionHeader {
-              text: "AUDIO CODEC"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            ToggleRow {
-              width: parent.width
-              rowName: "ldac"
-              label: "LDAC on earbuds"
-              on: pods.ldacEnabled
-              onActivated: pods.setLdac(!pods.ldacEnabled)
-            }
-
-            Text {
-              visible: pods.spatialAudio && !pods.ldacEnabled
-              width: parent.width
-              text: "Turning on LDAC turns off Spatial Audio."
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              wrapMode: Text.WordWrap
-            }
-
-            Text {
-              width: parent.width
-              text: "Computer playback · " + Model.codecLabel(pods.hostCodec)
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              wrapMode: Text.WordWrap
-            }
-          }
-
-          PanelSeparator {
-            visible: root.mainView && pods.hasEarbuds && ((pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0) || pods.limitHighVolumeSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || root.deviceInfoRows.length > 0)
-            foreground: root.foreground
-          }
-
-          NavigationRow {
-            visible: root.mainView && pods.hasEarbuds && ((pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0) || pods.limitHighVolumeSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || root.deviceInfoRows.length > 0)
-            width: parent.width
-            rowName: "settings"
-            title: "Device Settings"
-            subtitle: pods.autoPowerOffSupported
-              ? "Auto Power-Off · " + Model.optionLabel(pods.autoPowerOffOptions, pods.autoPowerOff)
-              : "High-Volume Limit · " + (pods.limitHighVolume ? "On" : "Off")
-            onActivated: root.showSettings(true)
-          }
-
-          PanelSeparator {
-            visible: root.mainView && pods.hasEarbuds && pods.hasButtonControls
-            foreground: root.foreground
-          }
-
-          NavigationRow {
-            visible: root.mainView && pods.hasEarbuds && pods.hasButtonControls
-            width: parent.width
-            rowName: "buttons"
-            title: "Button Controls"
-            subtitle: "Customize left and right presses"
-            onActivated: root.showButtons(true)
-          }
-
-          PanelSeparator {
-            visible: root.mainView && pods.hasEarbuds && pods.dualConnectionsSupported
-            foreground: root.foreground
-          }
-
-          NavigationRow {
-            visible: root.mainView && pods.hasEarbuds && pods.dualConnectionsSupported
-            width: parent.width
-            rowName: "dual"
-            title: "Dual Connections"
-            subtitle: pods.dualConnections ? "On" : "Off"
-            onActivated: root.showDual(true)
-          }
-
           Column {
             visible: (root.effectsView || root.dualView || root.settingsView || root.buttonsView) && pods.hasEarbuds
             width: parent.width
             spacing: Style.space(12)
 
             CursorSurface {
+              property string rowName: "back"
               implicitWidth: backContent.implicitWidth + Style.space(16)
               implicitHeight: backContent.implicitHeight + Style.space(12)
               foreground: root.foreground
@@ -1086,7 +954,8 @@ Panel {
                 Text {
                   Layout.alignment: Qt.AlignVCenter
                   text: root.buttonsView && root.selectedGesture !== "" ? "Back to button controls"
-                    : root.settingsView && root.settingsDetail !== "" ? "Back to device settings" : "Back to earbuds"
+                    : root.settingsView && (root.settingsDetail === "power" || root.settingsDetail === "volume") ? "Back to preferences"
+                    : root.buttonsView || root.dualView || (root.settingsView && root.settingsDetail !== "") ? "Back to Advanced Settings" : "Back to earbuds"
                   color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.bodySmall
@@ -1103,6 +972,101 @@ Panel {
 
             Column {
               visible: root.settingsView && root.settingsDetail === ""
+              width: parent.width
+              spacing: Style.space(4)
+              PanelSectionHeader { text: "ADVANCED SETTINGS"; foreground: root.foreground; fontFamily: root.fontFamily }
+              NavigationRow {
+                visible: pods.ldacSupported || pods.hostCodec !== ""
+                width: parent.width
+                rowName: "detail:audio"
+                title: "Audio Quality"
+                subtitle: "LDAC and computer playback codec"
+                onActivated: root.showDetail("audio")
+              }
+              NavigationRow {
+                visible: pods.dualConnectionsSupported
+                width: parent.width
+                rowName: "dual"
+                title: "Connections"
+                subtitle: "Dual connections and paired devices"
+                onActivated: root.showDual(true)
+              }
+              NavigationRow {
+                visible: pods.hasButtonControls
+                width: parent.width
+                rowName: "buttons"
+                title: "Earbud Controls"
+                subtitle: "Customize left and right presses"
+                onActivated: root.showButtons(true)
+              }
+              NavigationRow {
+                visible: pods.autoPowerOffSupported || pods.touchToneSupported || pods.lowBatteryPromptSupported || pods.limitHighVolumeSupported
+                width: parent.width
+                rowName: "detail:preferences"
+                title: "Preferences"
+                subtitle: "Power, tones and volume limit"
+                onActivated: root.showDetail("preferences")
+              }
+              NavigationRow {
+                visible: pods.eqTransferSupported
+                width: parent.width
+                rowName: "detail:transfer"
+                title: "Preset Management"
+                subtitle: "Import or export saved EQ presets"
+                onActivated: root.showDetail("transfer")
+              }
+              NavigationRow {
+                visible: root.deviceInfoRows.length > 0
+                width: parent.width
+                rowName: "detail:info"
+                title: "Device Information"
+                subtitle: "Firmware, serial number and status"
+                onActivated: root.showDetail("info")
+              }
+            }
+
+          Column {
+            visible: root.settingsView && root.settingsDetail === "audio"
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSectionHeader {
+              text: "AUDIO CODEC"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            ToggleRow {
+              width: parent.width
+              rowName: "ldac"
+              visible: pods.ldacSupported
+              label: pods.switchingCodec ? "Switching codec…" : "LDAC on earbuds"
+              on: pods.ldacEnabled
+              onActivated: pods.setLdac(!pods.ldacEnabled)
+            }
+
+            Text {
+              visible: pods.spatialAudio && !pods.ldacEnabled
+              width: parent.width
+              text: "Turning on LDAC turns off Spatial Audio."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              width: parent.width
+              text: "Computer playback · " + Model.codecLabel(pods.hostCodec)
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+          }
+
+            Column {
+              visible: root.settingsView && root.settingsDetail === "power"
               width: parent.width
               spacing: Style.space(10)
 
@@ -1135,6 +1099,20 @@ Panel {
                 }
               }
 
+            }
+
+            Column {
+              visible: root.settingsView && root.settingsDetail === "preferences"
+              width: parent.width
+              spacing: Style.space(10)
+              NavigationRow {
+                visible: pods.autoPowerOffSupported && pods.autoPowerOffOptions.length > 0
+                width: parent.width
+                rowName: "detail:power"
+                title: "Auto Power-Off"
+                subtitle: Model.optionLabel(pods.autoPowerOffOptions, pods.autoPowerOff)
+                onActivated: root.showDetail("power")
+              }
               PanelSectionHeader {
                 visible: pods.touchToneSupported || pods.lowBatteryPromptSupported
                 text: "PREFERENCES"
@@ -1176,14 +1154,6 @@ Panel {
                 onActivated: root.showHighVolume()
               }
 
-              NavigationRow {
-                visible: root.deviceInfoRows.length > 0
-                width: parent.width
-                rowName: "deviceinfo"
-                title: "Device Information"
-                subtitle: pods.deviceModel
-                onActivated: root.showDeviceInfo()
-              }
             }
 
             Column {
@@ -1530,7 +1500,7 @@ Panel {
             }
 
             Column {
-              visible: root.effectsView && pods.eqTransferSupported
+              visible: root.settingsView && root.settingsDetail === "transfer" && pods.eqTransferSupported
               width: parent.width
               spacing: Style.space(8)
               PanelSectionHeader {
@@ -1730,6 +1700,7 @@ Panel {
         }
         Text {
           width: parent.width
+          visible: nav.subtitle !== ""
           text: nav.subtitle
           color: root.dim
           font.family: root.fontFamily
@@ -1747,70 +1718,20 @@ Panel {
     }
   }
 
-  component LevelRow: Item {
-    id: levelRow
+  component BatteryCell: Column {
     property string label: ""
     property int level: Model.LEVEL_UNKNOWN
     property bool charging: false
-
-    readonly property bool low: level !== Model.LEVEL_UNKNOWN && level <= pods.lowBatteryPercent && !charging
-
-    implicitHeight: levelLayout.implicitHeight
-
-    RowLayout {
-      id: levelLayout
-      anchors.left: parent.left
-      anchors.right: parent.right
-      spacing: Style.space(8)
-
-      Text {
-        text: levelRow.label
-        color: root.foreground
-        opacity: 0.6
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        Layout.preferredWidth: Style.space(44)
-      }
-
-      Rectangle {
-        id: meterTrack
-        Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
-        implicitHeight: Style.space(6)
-        radius: height / 2
-        color: Qt.darker(root.foreground, 3.2)
-
-        Rectangle {
-          width: meterTrack.width * Model.levelFraction(levelRow.level)
-          height: parent.height
-          radius: parent.radius
-          color: levelRow.low ? root.urgent : root.foreground
-        }
-      }
-
-      Text {
-        text: Model.levelText(levelRow.level)
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        horizontalAlignment: Text.AlignRight
-        Layout.preferredWidth: Style.space(38)
-      }
-
-      Text {
-        text: levelRow.charging ? "Charging" : ""
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        elide: Text.ElideRight
-        Layout.preferredWidth: Style.space(56)
-      }
+    spacing: Style.space(4)
+    Text { text: label; color: root.dim; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
+    Text {
+      text: (level === Model.LEVEL_UNKNOWN ? "—" : level + "%") + (charging ? " ϟ" : "")
+      color: level >= 0 && level <= pods.lowBatteryPercent && !charging ? root.urgent : root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
     }
   }
 
-  // Generic checkmark-list row, reused for ambient sound mode, ANC sub-mode,
-  // multi-scene, transparency mode and sound effects — every setting in this
-  // panel where the widget picks exactly one value out of a fixed list.
   component OptionRow: CursorSurface {
     id: optionRow
     property string rowName: ""

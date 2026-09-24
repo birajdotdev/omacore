@@ -83,6 +83,8 @@ Item {
   readonly property bool updating: actionProcess.running || queuedActions > 0 || transferProcess.running
   property string lastError: ""
   property string actionStatus: ""
+  readonly property bool switchingCodec: actionProcess.running && actionProcess.command[0] === ldacScript
+  property bool actionStatusError: false
 
   // True when omacore-status couldn't find the OpenSCQ30 CLI on PATH. The
   // panel then offers an explicit install action instead of hiding silently.
@@ -704,6 +706,7 @@ Item {
     var index = devices.indexOf(mac)
     if ((index >= 0) === enabled) return
     if (enabled && devices.length >= 2) {
+      actionStatusError = true
       actionStatus = "Disconnect one device before connecting another."
       actionStatusTimer.restart()
       return
@@ -793,6 +796,7 @@ Item {
     stderr: StdioCollector { id: transferErr; waitForEnd: true }
     onExited: function (exitCode) {
       transferWatchdog.stop()
+      root.actionStatusError = exitCode !== 0
       root.actionStatus = exitCode === 0
         ? Model.elideError(transferOut.text).trim()
         : "EQ transfer failed: " + (Model.elideError(transferErr.text) || "command failed")
@@ -821,6 +825,7 @@ Item {
     stderr: StdioCollector { id: deviceChoiceErr; waitForEnd: true }
     onExited: function (exitCode) {
       if (exitCode !== 0) {
+        root.actionStatusError = true
         root.actionStatus = "Device selection failed: " + (Model.elideError(deviceChoiceErr.text) || "could not save the setting")
         actionStatusTimer.restart()
       }
@@ -858,6 +863,7 @@ Item {
       actionWatchdog.stop()
       if (exitCode !== 0) {
         root._clearWrites()
+        root.actionStatusError = true
         root.actionStatus = "Update failed: " + (Model.elideError(actionErr.text) || "command failed or timed out")
         actionStatusTimer.restart()
       } else if (root.queuedActions > 0) {

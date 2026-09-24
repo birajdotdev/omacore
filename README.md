@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/omacore.png" alt="Current Omacore panel showing earbud battery, sound mode, ANC controls, Sound Effects and Dual Connections" width="340">
+  <img src="screenshots/omacore.png" alt="Compact Omacore panel showing battery levels, sound modes, Sound Effects and the Advanced Settings gear" width="340">
 </p>
 
 ## How it looks
@@ -17,15 +17,16 @@
 Click the Omacore icon (right side of the bar) to open the panel above —
 see **What it shows** below for what's in it.
 
-When a device is preferred or multiple Soundcore devices are connected, the
-panel adds a [Device picker](screenshots/device-picker.png). Choosing
-**Automatic** clears the preference.
-The [Device Settings page](screenshots/device-settings.png) shows supported
-Auto Power-Off choices, preferences, and links to the [High-Volume Limit controls](screenshots/volume-limit.png).
-The [Sound Effects page](screenshots/eq-transfer.png) includes EQ preset transfer.
-The [Button Controls page](screenshots/button-controls.png) shows the current
-left and right gestures; [select a gesture](screenshots/button-action.png) to
-see only actions supported for that press.
+The main page keeps daily controls together: battery levels, sound mode,
+contextual ANC controls or transparency type, and Sound Effects.
+The gear in the top-right opens [Advanced Settings](screenshots/advanced-settings.png):
+audio quality, connections, earbud controls, preferences,
+preset management, and device information. Only supported features appear.
+
+The device picker appears when multiple devices are available or a preferred
+device needs recovery. Choosing **Automatic** clears the preference.
+Back or `Esc` returns to the parent page and restores its scroll position.
+Hover **Sound Mode** for keyboard shortcuts.
 
 ## Install
 
@@ -69,20 +70,10 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
   lowest known earbud percentage (or the case percentage when neither bud
   reports one) on a horizontal bar; `showBatteryPercent` can hide it. A low
   reading colors the bar indicator with the theme's alert color.
-- **Sound mode** — Noise Cancellation, Transparency or Normal — with the
-  active mode checked, and one click or `n`/`t`/`o` to switch it. Selecting a
-  mode reveals that mode's own settings below it, mirroring Soundcore's app:
-  - **Noise Cancellation** shows an inline Mode dropdown (Manual / Adaptive /
-    Multi-Scene) plus a Real-time Adaptive ANC toggle — shown regardless of
-    which of the three is selected, same as the Soundcore app:
-    - **Manual** additionally shows a 1-5 intensity level.
-    - **Multi-Scene** additionally shows a Transport / Outdoor / Indoor
-      picker as three side-by-side buttons.
-    - **Wind noise suppression** — a toggle, one click or `w` (while in
-      Noise Cancellation) to flip it.
-  - **Transparency** shows a Fully Transparent / Vocal Mode picker.
-  - **Normal** shows none of the ANC controls; Sound Effects and other supported
-    device settings remain below.
+- **Sound mode** — ANC, Transparency or Normal — uses three buttons, with
+  `n`/`t`/`o` shortcuts. Manual ANC intensity and transparency type stay on the
+  main page. Selecting ANC also reveals its algorithm (Manual / Adaptive /
+  Multi-Scene), scene selection, real-time adaptive ANC, and wind suppression. `w` toggles wind suppression while ANC is active.
 - **Sound Effects** — one row on the main panel shows the active selection.
   Open it for a dedicated view with three choices:
   - **Default**: choose a built-in EQ preset using the device's own labels.
@@ -95,13 +86,13 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
     eight bands, 100 Hz–12.8 kHz). Dragging applies on release; left/right on
     a focused band adjusts by 1 dB. Presets are saved in OpenSCQ30's database
     and survive shell restarts. An existing name shows **Update preset**.
-  - **Preset transfer**: copy all saved EQ presets as OpenSCQ30 JSON to the
+- **Advanced Settings → Preset Management**: copy all saved EQ presets as OpenSCQ30 JSON to the
     clipboard, or import JSON from the clipboard. Import requires a second
     click because matching preset names are replaced. The plugin validates
     the current model's band count and gain range before sending the import.
-  The back arrow or `esc` returns to the main panel. Opening the panel starts
+  The back arrow or `esc` returns to the parent page. Opening the panel starts
   on the main view. Only features reported by the device are shown.
-- **Audio codec** — when OpenSCQ30 reports an LDAC toggle, the main panel
+- **Advanced Settings → Audio Quality** — when OpenSCQ30 reports an LDAC toggle, this page
   shows **LDAC on earbuds** and the codec negotiated by the computer's
   Bluetooth playback sink (for example, AAC or LDAC). The earbud setting and
   the computer's codec are separate: enabling LDAC on the earbuds does not
@@ -113,7 +104,7 @@ automatically** and notifies you. An ambiguous name leaves a model dropdown +
   stick. `omacore-codec` reads the computer's codec from
   `pactl`, updating while the panel is open. It displays **Unavailable** if
   the sink or `pactl` cannot provide a codec.
-- **Device Settings** — Auto Power-Off uses the choices and display labels
+- **Advanced Settings → Preferences** — Auto Power-Off uses the choices and display labels
   reported by the connected model. Choose Disabled or a supported timer to
   control the earbuds' automatic power-off delay. On the R60i NC, the
   available timers are 10, 20, 30, and 60 minutes. When supported, the
@@ -256,7 +247,7 @@ separately with your AUR helper and `openscq30 paired-devices remove -a
 | `w` | toggle wind noise suppression (while in Noise Cancellation, if supported) |
 | `r` | refresh |
 | `tab` | move to the next panel |
-| `esc` | return from Sound Effects; otherwise close |
+| `esc` | return to the parent page; close from the main page |
 
 Every other setting (scene, transparency mode, sound effect) is reached by
 moving the cursor to its row and pressing `enter`/`space`, or by clicking it
@@ -268,8 +259,8 @@ row's label — keyboard `enter`/`space` on the row still works either way.
 The Device picker uses the same dropdown keys.
 
 Left click opens the panel. Right click cycles Noise Cancellation,
-Transparency and Normal while the device status is current. The main panel
-shows the mode and refresh shortcuts at its bottom.
+Transparency and Normal while the device status is current. Hover **Sound Mode**
+for mode and refresh shortcuts.
 
 ## Settings
 
@@ -283,7 +274,7 @@ shows the mode and refresh shortcuts at its bottom.
 
 ## Development checks
 
-Run `node tests/regression.cjs` and `bash tests/test_eq_transfer.sh` from the project root. The tests cover model
+Run `node tests/regression.cjs`, `node tests/navigation.cjs`, and `bash tests/test_eq_transfer.sh` from the project root. The tests cover model
 parsing, queued setting writes, transient read errors, numeric ANC settings,
 and custom EQ ranges, saved-profile commands, and value settling
 using fake CLI commands (no earbud settings are changed).
